@@ -28,10 +28,8 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
     });
 
     try {
-      final res = await Supabase.instance.client
-          .from('drivers')
-          .select('id, display_name, vehicle_label, hospital_id, active')
-          .order('display_name');
+      // SECURITY DEFINER RPC: Never queries table directly with anon role
+      final res = await Supabase.instance.client.rpc('get_active_ambulance_units');
 
       final list = (res as List)
           .map((item) => DriverModel.fromJson(item as Map<String, dynamic>))
@@ -114,10 +112,13 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
                       children: [
                         const Icon(Icons.cloud_off, color: Colors.amber, size: 48),
                         const SizedBox(height: 12),
-                        Text(
-                          _errorMessage!,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(color: Colors.white70),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                          child: Text(
+                            _errorMessage!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: Colors.white70, fontSize: 13),
+                          ),
                         ),
                         const SizedBox(height: 16),
                         ElevatedButton.icon(

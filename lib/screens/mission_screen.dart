@@ -87,17 +87,13 @@ class _MissionScreenState extends State<MissionScreen> {
     }
 
     try {
-      final res = await Supabase.instance.client
-          .from('emergency_requests')
-          .select('*, hospitals(*)')
-          .eq('driver_id', widget.driver.id)
-          .not('status', 'in', '("completed","cancelled")')
-          .order('created_at', ascending: false)
-          .limit(1);
+      // SECURITY DEFINER RPC: Never queries table directly with anon role
+      final res = await Supabase.instance.client.rpc('get_driver_active_mission', params: {
+        'p_driver_id': widget.driver.id,
+      });
 
-      final list = res as List;
-      if (list.isNotEmpty) {
-        final mission = EmergencyRequestModel.fromJson(list.first as Map<String, dynamic>);
+      if (res != null) {
+        final mission = EmergencyRequestModel.fromJson(res as Map<String, dynamic>);
         setState(() {
           _activeMission = mission;
           _isLoading = false;
@@ -109,7 +105,7 @@ class _MissionScreenState extends State<MissionScreen> {
         });
       }
     } catch (e) {
-      debugPrint('Error fetching mission: $e');
+      debugPrint('Error fetching mission via RPC: $e');
       if (!silent) {
         setState(() => _isLoading = false);
       }
@@ -125,7 +121,7 @@ class _MissionScreenState extends State<MissionScreen> {
     });
 
     try {
-      // Transition state using RPC
+      // SECURITY DEFINER RPC: Transition state
       final rpcRes = await Supabase.instance.client.rpc('transition_emergency_state', params: {
         'request_id': _activeMission!.id,
         'new_state': newStatus,
@@ -135,18 +131,9 @@ class _MissionScreenState extends State<MissionScreen> {
       debugPrint('Transition result: $rpcRes');
       await _fetchActiveMission();
     } catch (e) {
-      // Fallback: direct table update if permitted
-      try {
-        await Supabase.instance.client
-            .from('emergency_requests')
-            .update({'status': newStatus})
-            .eq('id', _activeMission!.id);
-        await _fetchActiveMission();
-      } catch (directErr) {
-        setState(() {
-          _statusError = 'Status update failed: $directErr';
-        });
-      }
+      setState(() {
+        _statusError = 'Status update failed: $e';
+      });
     } finally {
       setState(() {
         _isActionBusy = false;

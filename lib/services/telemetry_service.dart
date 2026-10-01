@@ -114,34 +114,20 @@ class TelemetryService {
         }
       } catch (_) {}
 
-      final client = Supabase.instance.client;
-
-      // Update drivers table directly
-      await client.from('drivers').update({
-        'current_lat': currentPosition!.latitude,
-        'current_lng': currentPosition!.longitude,
-        'heading': currentPosition!.heading,
-        'speed': currentPosition!.speed,
-        'battery_level': batteryLevel,
-        'is_charging': isCharging,
-        'network_type': networkType,
-        'last_location_at': DateTime.now().toUtc().toIso8601String(),
-      }).eq('id', currentDriverId!);
+      // SECURITY DEFINER RPC: Never updates table directly with anon role
+      await Supabase.instance.client.rpc('report_driver_telemetry', params: {
+        'p_driver_id': currentDriverId,
+        'p_lat': currentPosition!.latitude,
+        'p_lng': currentPosition!.longitude,
+        'p_heading': currentPosition!.heading,
+        'p_speed': currentPosition!.speed,
+        'p_battery_level': batteryLevel,
+        'p_is_charging': isCharging,
+        'p_network_type': networkType,
+      });
 
     } catch (e) {
-      debugPrint('Direct location update failed, trying RPC fallback: $e');
-      // Fallback RPC if RLS blocks direct table update
-      try {
-        await Supabase.instance.client.rpc('update_driver_location', params: {
-          'p_driver_id': currentDriverId,
-          'p_lat': currentPosition!.latitude,
-          'p_lng': currentPosition!.longitude,
-          'p_heading': currentPosition!.heading,
-          'p_speed': currentPosition!.speed,
-        });
-      } catch (rpcErr) {
-        debugPrint('RPC fallback failed: $rpcErr');
-      }
+      debugPrint('report_driver_telemetry RPC failed: $e');
     }
   }
 
