@@ -54,34 +54,8 @@ jobs:
               to_add = [perm for perm in permissions if perm not in text]
               if to_add:
                   idx = text.find(">")
-                  text = text[:idx+1] + "\n    " + "\n    ".join(to_add) + text[idx+1:]
-              if "<queries>" not in text:
-                  q_block = """
-    <queries>
-        <intent>
-            <action android:name="android.intent.action.VIEW" />
-            <data android:scheme="geo" />
-        </intent>
-        <intent>
-            <action android:name="android.intent.action.VIEW" />
-            <data android:scheme="google.navigation" />
-        </intent>
-        <intent>
-            <action android:name="android.intent.action.VIEW" />
-            <data android:scheme="https" />
-        </intent>
-        <intent>
-            <action android:name="android.intent.action.VIEW" />
-            <data android:scheme="tel" />
-        </intent>
-        <package android:name="com.google.android.apps.maps" />
-        <package android:name="com.waze" />
-    </queries>
-"""
-                  app_idx = text.find("<application")
-                  if app_idx != -1:
-                      text = text[:app_idx] + q_block + "\n    " + text[app_idx:]
-              p.write_text(text)
+                  new_text = text[:idx+1] + "\n    " + "\n    ".join(to_add) + text[idx+1:]
+                  p.write_text(new_text)
 
           # 2. Configure coreLibraryDesugaring in android/app/build.gradle if present
           gradle_path = Path("android/app/build.gradle")
