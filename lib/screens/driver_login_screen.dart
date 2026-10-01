@@ -59,8 +59,6 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       body: SafeArea(
@@ -93,11 +91,11 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
                 ),
               ),
               const SizedBox(height: 6),
-              Text(
+              const Text(
                 'Select your active ambulance vehicle to begin telemetry and receive live dispatches.',
                 style: TextStyle(
                   fontSize: 14,
-                  color: Colors.slate.shade400,
+                  color: Color(0xFF94A3B8),
                   height: 1.4,
                 ),
               ),
@@ -180,9 +178,9 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
                                       const SizedBox(height: 4),
                                       Text(
                                         d.vehicleLabel ?? 'Unit ID: ${d.id.substring(0, 8)}',
-                                        style: TextStyle(
+                                        style: const TextStyle(
                                           fontSize: 13,
-                                          color: Colors.slate.shade400,
+                                          color: Color(0xFF94A3B8),
                                         ),
                                       ),
                                     ],

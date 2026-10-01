@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:intl/intl.dart';
 import '../models/driver_model.dart';
 import '../models/emergency_request.dart';
 import '../services/telemetry_service.dart';
@@ -29,6 +28,10 @@ class _MissionScreenState extends State<MissionScreen> {
 
   RealtimeChannel? _subscription;
   Timer? _refreshTimer;
+
+  // Standard theme colors
+  static const Color emeraldColor = Color(0xFF10B981);
+  static const Color slateTextColor = Color(0xFF94A3B8);
 
   @override
   void initState() {
@@ -270,11 +273,11 @@ class _MissionScreenState extends State<MissionScreen> {
                     width: 10,
                     height: 10,
                     decoration: BoxDecoration(
-                      color: pos != null ? Colors.emerald : Colors.amber,
+                      color: pos != null ? emeraldColor : Colors.amber,
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: (pos != null ? Colors.emerald : Colors.amber).withOpacity(0.5),
+                          color: (pos != null ? emeraldColor : Colors.amber).withOpacity(0.5),
                           blurRadius: 6,
                           spreadRadius: 2,
                         ),
@@ -288,7 +291,7 @@ class _MissionScreenState extends State<MissionScreen> {
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 0.5,
-                      color: pos != null ? const Color(0xFF10B981) : Colors.amber,
+                      color: pos != null ? emeraldColor : Colors.amber,
                     ),
                   ),
                 ],
@@ -324,7 +327,7 @@ class _MissionScreenState extends State<MissionScreen> {
                     style: const TextStyle(fontSize: 12, color: Colors.white70),
                   ),
                   const SizedBox(width: 8),
-                  const Icon(Icons.screen_lock_rotation, size: 14, color: Colors.emerald),
+                  const Icon(Icons.screen_lock_rotation, size: 14, color: emeraldColor),
                 ],
               ),
             ],
@@ -363,12 +366,12 @@ class _MissionScreenState extends State<MissionScreen> {
               ),
             ),
             const SizedBox(height: 8),
-            Text(
+            const Text(
               'Unit is On Duty. Background GPS is streaming to dispatchers. Keep phone in cradle.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
-                color: Colors.slate.shade400,
+                color: slateTextColor,
                 height: 1.4,
               ),
             ),
@@ -459,7 +462,7 @@ class _MissionScreenState extends State<MissionScreen> {
                     ),
                     if (mission.contactPhone != null && mission.contactPhone!.isNotEmpty)
                       IconButton(
-                        icon: const Icon(Icons.phone, color: Colors.emerald, size: 22),
+                        icon: const Icon(Icons.phone, color: emeraldColor, size: 22),
                         onPressed: () => _callPhone(mission.contactPhone!),
                       ),
                   ],
@@ -596,7 +599,7 @@ class _MissionScreenState extends State<MissionScreen> {
             _buildLargeActionButton(
               title: 'ARRIVED AT HOSPITAL & HANDED OVER',
               subtitle: 'Mission complete, patient in hospital care',
-              color: const Color(0xFF10B981),
+              color: emeraldColor,
               icon: Icons.check_circle_outline,
               onTap: () => _updateMissionStatus('completed'),
             ),
