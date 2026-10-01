@@ -32,6 +32,9 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
   bool _isLoadingAvailable = true;
   bool _isLoadingHistory = false;
 
+  String? _activeFetchError;
+  String? _availableFetchError;
+
   bool _isAudioMuted = false;
   String? _incomingAlertMessage;
   RealtimeChannel? _subscription;
@@ -71,12 +74,25 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
             final String? driverId = record['driver_id']?.toString();
 
             // Check if this is an assigned mission for this driver
-            if (driverId == widget.driver.id) {
+            if (driverId != null && driverId == widget.driver.id) {
+              // Immediately hydrate from the WebSocket payload so the screen updates instantaneously!
+              try {
+                final fastModel = EmergencyRequestModel.fromJson(Map<String, dynamic>.from(record));
+                if (mounted) {
+                  setState(() {
+                    _activeMission = fastModel;
+                    _currentTabIndex = 0; // Focus on active mission
+                  });
+                }
+              } catch (parseErr) {
+                debugPrint('Fast parse error from WebSocket: $parseErr');
+              }
+
               _fetchActiveMission(silent: true);
               if (!_isAudioMuted && (payload.eventType == PostgresChangeEvent.insert || reqStatus == 'Driver assigned')) {
                 _triggerAlarm('🚨 DISPATCH: You have been assigned an emergency run!');
               }
-            } else if (reqStatus == 'pending' || reqStatus == 'broadcasted' || reqStatus == 'Pending') {
+            } else if (reqStatus == 'pending' || reqStatus == 'broadcasted' || reqStatus == 'Pending' || reqStatus == 'Requested' || reqStatus == 'Matching') {
               // Open dispatch broadcasted to fleet
               _fetchAvailableJobs(silent: true);
               if (!_isAudioMuted) {
@@ -111,52 +127,130 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
 
   Future<void> _fetchActiveMission({bool silent = false}) async {
     if (!silent) setState(() => _isLoadingActive = true);
+    _activeFetchError = null;
+
+    dynamic activeRecord;
+
+    // Strategy 1: Call RPC
     try {
-      final res = await Supabase.instance.client.rpc('get_driver_active_mission', params: {
+      final rpcRes = await Supabase.instance.client.rpc('get_driver_active_mission', params: {
         'p_driver_id': widget.driver.id,
       });
-
-      if (mounted) {
-        setState(() {
-          if (res != null) {
-            _activeMission = EmergencyRequestModel.fromJson(Map<String, dynamic>.from(res as Map));
-          } else {
-            _activeMission = null;
-          }
-          _isLoadingActive = false;
-        });
+      if (rpcRes != null) {
+        activeRecord = rpcRes;
       }
-    } catch (e) {
-      debugPrint('Error fetching active mission: $e');
-      if (mounted && !silent) setState(() => _isLoadingActive = false);
+    } catch (rpcErr) {
+      debugPrint('RPC get_driver_active_mission notice: $rpcErr');
+    }
+
+    // Strategy 2: Fallback to direct query if RPC returned null or was unavailable
+    if (activeRecord == null) {
+      try {
+        final queryRes = await Supabase.instance.client
+            .from('emergency_requests')
+            .select('*, hospitals:hospitals(*)')
+            .eq('driver_id', widget.driver.id)
+            .not('status', 'in', '("Completed","Cancelled / failed","completed","cancelled")')
+            .order('created_at', ascending: false)
+            .limit(1)
+            .maybeSingle();
+
+        if (queryRes != null) {
+          activeRecord = queryRes;
+        }
+      } catch (queryErr) {
+        debugPrint('Direct query emergency_requests notice: $queryErr');
+        _activeFetchError = queryErr.toString();
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        if (activeRecord != null) {
+          _activeMission = EmergencyRequestModel.fromJson(Map<String, dynamic>.from(activeRecord as Map));
+          _activeFetchError = null;
+        } else if (_activeMission == null) {
+          _activeMission = null;
+        }
+        _isLoadingActive = false;
+      });
     }
   }
 
   Future<void> _fetchAvailableJobs({bool silent = false}) async {
     if (!silent) setState(() => _isLoadingAvailable = true);
+    _availableFetchError = null;
+
+    List<dynamic> listData = [];
+
+    // Strategy 1: Call RPC
     try {
       final res = await Supabase.instance.client.rpc('get_available_emergency_jobs');
-      if (mounted) {
-        final list = (res as List)
+      if (res is List && res.isNotEmpty) {
+        listData = res;
+      }
+    } catch (rpcErr) {
+      debugPrint('RPC get_available_emergency_jobs notice: $rpcErr');
+    }
+
+    // Strategy 2: Fallback to direct query for unassigned dispatches
+    if (listData.isEmpty) {
+      try {
+        final queryRes = await Supabase.instance.client
+            .from('emergency_requests')
+            .select('*, hospitals:hospitals(*)')
+            .isFilter('driver_id', null)
+            .not('status', 'in', '("Completed","Cancelled / failed","completed","cancelled")')
+            .order('created_at', ascending: false)
+            .limit(20);
+
+        if (queryRes is List && queryRes.isNotEmpty) {
+          listData = queryRes;
+        }
+      } catch (queryErr) {
+        debugPrint('Direct query available jobs notice: $queryErr');
+        _availableFetchError = queryErr.toString();
+      }
+    }
+
+    if (mounted) {
+      try {
+        final list = listData
             .map((item) => EmergencyRequestModel.fromJson(Map<String, dynamic>.from(item as Map)))
             .toList();
         setState(() {
           _availableJobs = list;
           _isLoadingAvailable = false;
+          _availableFetchError = null;
+        });
+      } catch (parseErr) {
+        debugPrint('Parse error in available jobs: $parseErr');
+        setState(() {
+          _isLoadingAvailable = false;
+          _availableFetchError = 'Parse error: $parseErr';
         });
       }
-    } catch (e) {
-      debugPrint('Error fetching available jobs: $e');
-      if (mounted && !silent) setState(() => _isLoadingAvailable = false);
     }
   }
 
   Future<void> _fetchJobHistory() async {
     setState(() => _isLoadingHistory = true);
     try {
-      final res = await Supabase.instance.client.rpc('get_driver_job_history', params: {
-        'p_driver_id': widget.driver.id,
-      });
+      dynamic res;
+      try {
+        res = await Supabase.instance.client.rpc('get_driver_job_history', params: {
+          'p_driver_id': widget.driver.id,
+        });
+      } catch (_) {
+        res = await Supabase.instance.client
+            .from('emergency_requests')
+            .select('*, hospitals:hospitals(*)')
+            .eq('driver_id', widget.driver.id)
+            .inFilter('status', ['Completed', 'Cancelled / failed', 'completed', 'cancelled'])
+            .order('created_at', ascending: false)
+            .limit(30);
+      }
+
       if (mounted) {
         final list = (res as List)
             .map((item) => EmergencyRequestModel.fromJson(Map<String, dynamic>.from(item as Map)))
@@ -174,7 +268,6 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
 
   void _onMissionAccepted(EmergencyRequestModel job) {
     _dismissAlarm();
-    // Switch to Active Mission tab and reload
     setState(() {
       _currentTabIndex = 0;
     });
@@ -340,6 +433,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
                     driver: widget.driver,
                     activeMission: _activeMission,
                     isLoading: _isLoadingActive,
+                    errorMessage: _activeFetchError,
                     onRefresh: () => _fetchActiveMission(),
                     onGoToAvailableJobs: () {
                       setState(() => _currentTabIndex = 1);
@@ -351,6 +445,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
                   AvailableJobsTab(
                     availableJobs: _availableJobs,
                     isLoading: _isLoadingAvailable,
+                    errorMessage: _availableFetchError,
                     onRefresh: () => _fetchAvailableJobs(),
                     onMissionAccepted: _onMissionAccepted,
                   ),

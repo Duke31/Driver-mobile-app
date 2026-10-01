@@ -8,6 +8,7 @@ class ActiveJobTab extends StatefulWidget {
   final DriverModel driver;
   final EmergencyRequestModel? activeMission;
   final bool isLoading;
+  final String? errorMessage;
   final VoidCallback onRefresh;
   final VoidCallback onGoToAvailableJobs;
 
@@ -16,6 +17,7 @@ class ActiveJobTab extends StatefulWidget {
     required this.driver,
     required this.activeMission,
     required this.isLoading,
+    this.errorMessage,
     required this.onRefresh,
     required this.onGoToAvailableJobs,
   });
@@ -96,7 +98,37 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
           padding: const EdgeInsets.all(24.0),
           child: Column(
             children: [
-              const SizedBox(height: 40),
+              if (widget.errorMessage != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade900.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.redAccent.withOpacity(0.5)),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.sync_problem_rounded, color: Colors.redAccent, size: 20),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Database Sync Notice',
+                            style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        widget.errorMessage!,
+                        style: const TextStyle(color: Colors.white70, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
+              const SizedBox(height: 20),
               Container(
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(

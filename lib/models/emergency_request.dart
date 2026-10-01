@@ -39,13 +39,31 @@ class EmergencyRequestModel {
     this.hospital,
   });
 
+  static double? _parseDouble(dynamic val) {
+    if (val == null) return null;
+    if (val is num) return val.toDouble();
+    if (val is String) return double.tryParse(val);
+    return null;
+  }
+
+  static Map<String, dynamic>? _parseHospital(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    if (raw is List && raw.isNotEmpty && raw.first is Map) {
+      return Map<String, dynamic>.from(raw.first as Map);
+    }
+    return null;
+  }
+
   factory EmergencyRequestModel.fromJson(Map<String, dynamic> json) {
+    final rawHospital = json['hospital'] ?? json['hospitals'];
+
     return EmergencyRequestModel(
       id: (json['id'] ?? '') as String,
       patientAddress: json['patient_address'] as String?,
       origin: json['origin'] as String?,
-      patientLat: (json['patient_lat'] as num?)?.toDouble(),
-      patientLng: (json['patient_lng'] as num?)?.toDouble(),
+      patientLat: _parseDouble(json['patient_lat']),
+      patientLng: _parseDouble(json['patient_lng']),
       emergencyType: json['emergency_type'] as String?,
       status: (json['status'] as String?) ?? 'assigned',
       createdAt: (json['created_at'] as String?) ?? '',
@@ -58,7 +76,7 @@ class EmergencyRequestModel {
       contactPhone: json['contact_phone'] as String?,
       patientAgeBand: json['patient_age_band'] as String?,
       priority: json['priority']?.toString(),
-      hospital: json['hospitals'] != null ? Map<String, dynamic>.from(json['hospitals'] as Map) : null,
+      hospital: _parseHospital(rawHospital),
     );
   }
 
@@ -71,20 +89,23 @@ class EmergencyRequestModel {
 
   String? get hospitalPhone {
     if (hospital != null) {
-      return (hospital!['intake_phone'] ?? hospital!['phone']) as String?;
+      final p = hospital!['intake_phone'] ?? hospital!['phone'] ?? hospital!['contact_phone'];
+      return p?.toString();
     }
     return null;
   }
 
   int? get hospitalCapacity {
     if (hospital != null && hospital!['available_capacity'] != null) {
-      return (hospital!['available_capacity'] as num?)?.toInt();
+      final cap = hospital!['available_capacity'];
+      if (cap is num) return cap.toInt();
+      if (cap is String) return int.tryParse(cap);
     }
     return null;
   }
 
-  double? get hospitalLat => (hospital?['lat'] as num?)?.toDouble();
-  double? get hospitalLng => (hospital?['lng'] as num?)?.toDouble();
+  double? get hospitalLat => _parseDouble(hospital?['lat']);
+  double? get hospitalLng => _parseDouble(hospital?['lng']);
   String? get hospitalAddress => hospital?['address'] as String?;
 
   /// Indicates whether the ambulance is already on its way to the hospital
