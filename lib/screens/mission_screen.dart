@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/driver_model.dart';
@@ -181,6 +182,12 @@ class _MissionScreenState extends State<MissionScreen> {
 
     if (confirm == true) {
       await _telemetry.stopTelemetry();
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('saved_driver_session');
+      } catch (e) {
+        debugPrint('Error clearing driver session: $e');
+      }
       if (mounted) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const DriverLoginScreen()),

@@ -23,6 +23,9 @@ dependencies:
   battery_plus: ^6.1.1
   connectivity_plus: ^6.1.0
 
+  # Persistent Session Storage
+  shared_preferences: ^2.3.2
+
   # Turn-by-turn Navigation Intents (Google Maps / Waze) & Phone Calls
   url_launcher: ^6.3.1
 
