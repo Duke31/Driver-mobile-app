@@ -35,6 +35,10 @@ dependencies:
   # Utilities & UI
   google_fonts: ^6.2.1
 
+  # In-App Tactical Live Map (OpenStreetMap & GPS Routing)
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/driver_model.dart';
 import '../models/emergency_request.dart';
+import '../widgets/tactical_mission_map.dart';
 
 class ActiveJobTab extends StatefulWidget {
   final DriverModel driver;
@@ -29,6 +30,8 @@ class ActiveJobTab extends StatefulWidget {
 class _ActiveJobTabState extends State<ActiveJobTab> {
   bool _isActionBusy = false;
   String? _statusError;
+  bool _showTacticalMap = true;
+  bool _isMapFullscreen = false;
 
   Future<void> _executeTransition(String nextStatus) async {
     if (widget.activeMission == null) return;
@@ -57,24 +60,87 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
     }
   }
 
-  Future<void> _launchMaps(double lat, double lng, {String? label}) async {
-    final googleMapsUrl = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng');
-    if (await canLaunchUrl(googleMapsUrl)) {
-      await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
+  Future<void> _launchMaps({double? lat, double? lng, String? address, String? label}) async {
+    if (lat == null && lng == null && (address == null || address.trim().isEmpty)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No coordinates or address specified for this destination.'),
+          backgroundColor: Colors.amber,
+        ),
+      );
+      return;
+    }
+
+    // 1. Try native Google Navigation intent
+    bool launched = false;
+    if (lat != null && lng != null) {
+      final navUri = Uri.parse('google.navigation:q=$lat,$lng&mode=d');
+      try {
+        launched = await launchUrl(navUri, mode: LaunchMode.externalNonBrowserApplication);
+      } catch (_) {}
+    } else if (address != null && address.isNotEmpty) {
+      final navUri = Uri.parse('google.navigation:q=${Uri.encodeComponent(address)}&mode=d');
+      try {
+        launched = await launchUrl(navUri, mode: LaunchMode.externalNonBrowserApplication);
+      } catch (_) {}
+    }
+
+    if (launched) return;
+
+    // 2. Fallback to Google Maps Web / App URL
+    Uri webUri;
+    if (lat != null && lng != null) {
+      webUri = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng');
+    } else {
+      webUri = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=${Uri.encodeComponent(address!)}');
+    }
+
+    try {
+      await launchUrl(webUri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      try {
+        await launchUrl(webUri, mode: LaunchMode.platformDefault);
+      } catch (err) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Could not open external maps: $err. Viewing in-app tactical map.'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      }
     }
   }
 
-  Future<void> _launchWaze(double lat, double lng) async {
-    final wazeUrl = Uri.parse('https://waze.com/ul?ll=$lat,$lng&navigate=yes');
-    if (await canLaunchUrl(wazeUrl)) {
+  Future<void> _launchWaze(double? lat, double? lng, {String? address}) async {
+    Uri wazeUrl;
+    if (lat != null && lng != null) {
+      wazeUrl = Uri.parse('https://waze.com/ul?ll=$lat,$lng&navigate=yes');
+    } else if (address != null && address.isNotEmpty) {
+      wazeUrl = Uri.parse('https://waze.com/ul?q=${Uri.encodeComponent(address)}&navigate=yes');
+    } else {
+      return;
+    }
+
+    try {
       await launchUrl(wazeUrl, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      await launchUrl(wazeUrl, mode: LaunchMode.platformDefault);
     }
   }
 
   Future<void> _callPhone(String phone) async {
-    final uri = Uri.parse('tel:$phone');
-    if (await canLaunchUrl(uri)) {
+    final cleanPhone = phone.replaceAll(RegExp(r'[^\d+]'), '');
+    final uri = Uri.parse('tel:$cleanPhone');
+    try {
       await launchUrl(uri);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not place call to $cleanPhone: $e')),
+        );
+      }
     }
   }
 
@@ -95,7 +161,7 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
         onRefresh: () async => widget.onRefresh(),
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(24.0),
+          padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 24.0),
           child: Column(
             children: [
               if (widget.errorMessage != null) ...[
@@ -108,11 +174,11 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
                   ),
                   child: Column(
                     children: [
-                      Row(
+                      const Row(
                         children: [
-                          const Icon(Icons.sync_problem_rounded, color: Colors.redAccent, size: 20),
-                          const SizedBox(width: 8),
-                          const Text(
+                          Icon(Icons.sync_problem_rounded, color: Colors.redAccent, size: 20),
+                          SizedBox(width: 8),
+                          Text(
                             'Database Sync Notice',
                             style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 13),
                           ),
@@ -168,21 +234,10 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
                 icon: const Icon(Icons.emergency_share_rounded),
                 label: const Text('View Available Emergency Queue'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.redAccent,
+                  backgroundColor: const Color(0xFF1E293B),
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                ),
-              ),
-              const SizedBox(height: 16),
-              OutlinedButton.icon(
-                onPressed: widget.onRefresh,
-                icon: const Icon(Icons.refresh_rounded, size: 18),
-                label: const Text('Refresh Mission Status'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.white70,
                   side: const BorderSide(color: Colors.white24),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
               ),
@@ -192,16 +247,34 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
       );
     }
 
-    // 2. ACTIVE MISSION CONSOLE
-    final bool isHeadingToHospital = mission.isEnRouteToHospital;
-    final bool isArrivedAtHospital = mission.isArrivedAtHospital;
+    // 2. ACTIVE MISSION IN PROGRESS
+    final currentStatus = mission.status;
+    final isHeadingToHospital = mission.isEnRouteToHospital || mission.isArrivedAtHospital;
+
+    // Fullscreen Map View Mode
+    if (_isMapFullscreen) {
+      return Stack(
+        children: [
+          TacticalMissionMap(
+            mission: mission,
+            driver: widget.driver,
+            height: double.infinity,
+            isHeadingToHospital: isHeadingToHospital,
+            isFullscreen: true,
+            onToggleFullscreen: () {
+              setState(() => _isMapFullscreen = false);
+            },
+          ),
+        ],
+      );
+    }
 
     return RefreshIndicator(
       color: Colors.redAccent,
       onRefresh: () async => widget.onRefresh(),
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -234,6 +307,7 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
                           border: Border.all(color: Colors.redAccent.withOpacity(0.4)),
                         ),
                         child: const Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 16),
                             SizedBox(width: 4),
@@ -277,21 +351,48 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  Text(
-                    'Status: ${mission.status}',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.amberAccent,
-                    ),
+                  Row(
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Colors.amberAccent,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Status: $currentStatus',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.amberAccent,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 14),
 
-            // DYNAMIC NAVIGATION TARGET SWITCH CARD
-            // Switches target from Patient to Hospital automatically when en route to hospital!
+            // IN-APP INTERACTIVE TACTICAL MISSION MAP
+            if (_showTacticalMap) ...[
+              TacticalMissionMap(
+                mission: mission,
+                driver: widget.driver,
+                height: 260,
+                isHeadingToHospital: isHeadingToHospital,
+                isFullscreen: false,
+                onToggleFullscreen: () {
+                  setState(() => _isMapFullscreen = true);
+                },
+              ),
+              const SizedBox(height: 14),
+            ],
+
+            // DYNAMIC NAVIGATION TARGET CARD
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -319,15 +420,18 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
                         size: 20,
                       ),
                       const SizedBox(width: 8),
-                      Text(
-                        isHeadingToHospital
-                            ? 'ACTIVE NAVIGATION TARGET: RECEIVING HOSPITAL'
-                            : 'ACTIVE NAVIGATION TARGET: PATIENT PICKUP LOCATION',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.8,
-                          color: isHeadingToHospital ? Colors.lightBlueAccent : Colors.white,
+                      Expanded(
+                        child: Text(
+                          isHeadingToHospital
+                              ? 'ACTIVE TARGET: RECEIVING HOSPITAL'
+                              : 'ACTIVE TARGET: PATIENT PICKUP LOCATION',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.6,
+                            color: isHeadingToHospital ? Colors.lightBlueAccent : Colors.white,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
@@ -338,9 +442,10 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
                         ? mission.hospitalName
                         : (mission.patientAddress ?? 'Patient Location'),
                     style: const TextStyle(
-                      fontSize: 17,
+                      fontSize: 16,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
+                      height: 1.3,
                     ),
                   ),
                   if (isHeadingToHospital && mission.hospitalAddress != null) ...[
@@ -352,26 +457,32 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
                   ],
                   const SizedBox(height: 14),
 
-                  // Navigation Action Buttons
+                  // Navigation Action Buttons (Glove-Friendly & Fluid)
                   Row(
                     children: [
                       Expanded(
                         child: ElevatedButton.icon(
                           onPressed: () {
                             if (isHeadingToHospital) {
-                              if (mission.hospitalLat != null && mission.hospitalLng != null) {
-                                _launchMaps(mission.hospitalLat!, mission.hospitalLng!, label: mission.hospitalName);
-                              }
+                              _launchMaps(
+                                lat: mission.hospitalLat,
+                                lng: mission.hospitalLng,
+                                address: mission.hospitalAddress ?? mission.hospitalName,
+                                label: mission.hospitalName,
+                              );
                             } else {
-                              if (mission.patientLat != null && mission.patientLng != null) {
-                                _launchMaps(mission.patientLat!, mission.patientLng!, label: 'Patient');
-                              }
+                              _launchMaps(
+                                lat: mission.patientLat,
+                                lng: mission.patientLng,
+                                address: mission.patientAddress,
+                                label: 'Patient Pickup',
+                              );
                             }
                           },
-                          icon: const Icon(Icons.navigation_rounded, size: 18),
+                          icon: const Icon(Icons.navigation_rounded, size: 20),
                           label: Text(
                             isHeadingToHospital ? 'Navigate to Hospital' : 'Navigate to Patient',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                           ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: isHeadingToHospital ? Colors.blueAccent : Colors.redAccent,
@@ -385,19 +496,23 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
                       IconButton(
                         onPressed: () {
                           if (isHeadingToHospital) {
-                            if (mission.hospitalLat != null && mission.hospitalLng != null) {
-                              _launchWaze(mission.hospitalLat!, mission.hospitalLng!);
-                            }
+                            _launchWaze(
+                              mission.hospitalLat,
+                              mission.hospitalLng,
+                              address: mission.hospitalAddress ?? mission.hospitalName,
+                            );
                           } else {
-                            if (mission.patientLat != null && mission.patientLng != null) {
-                              _launchWaze(mission.patientLat!, mission.patientLng!);
-                            }
+                            _launchWaze(
+                              mission.patientLat,
+                              mission.patientLng,
+                              address: mission.patientAddress,
+                            );
                           }
                         },
                         icon: const Icon(Icons.directions_car_rounded, color: Colors.cyanAccent),
                         style: IconButton.styleFrom(
                           backgroundColor: const Color(0xFF0F172A),
-                          padding: const EdgeInsets.all(12),
+                          padding: const EdgeInsets.all(14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
                         tooltip: 'Open in Waze',
@@ -431,38 +546,51 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
                   ),
                   const SizedBox(height: 10),
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.location_on_outlined, color: Colors.redAccent, size: 20),
+                      const Icon(Icons.location_on_rounded, color: Colors.redAccent, size: 18),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          mission.patientAddress ?? 'Patient Address unavailable',
-                          style: const TextStyle(fontSize: 14, color: Colors.white),
+                          mission.patientAddress ?? 'Coordinates given',
+                          style: const TextStyle(fontSize: 14, color: Colors.white, height: 1.3),
                         ),
                       ),
                     ],
                   ),
                   if (mission.contactPhone != null && mission.contactPhone!.isNotEmpty) ...[
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Icon(Icons.phone_rounded, color: Colors.greenAccent, size: 20),
-                        const SizedBox(width: 8),
                         Expanded(
-                          child: Text(
-                            mission.contactPhone!,
-                            style: const TextStyle(fontSize: 14, color: Colors.white, fontWeight: FontWeight.w600),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.phone_in_talk_rounded, color: Color(0xFF34D399), size: 18),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  mission.contactPhone!,
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         ElevatedButton.icon(
                           onPressed: () => _callPhone(mission.contactPhone!),
-                          icon: const Icon(Icons.call, size: 16),
+                          icon: const Icon(Icons.call_rounded, size: 16),
                           label: const Text('Call Patient'),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green.shade700,
+                            backgroundColor: const Color(0xFF10B981),
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           ),
                         ),
                       ],
@@ -473,19 +601,18 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.red.shade900.withOpacity(0.2),
+                        color: const Color(0xFF0F172A),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.redAccent.withOpacity(0.3)),
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(Icons.medical_services_rounded, color: Colors.redAccent, size: 18),
+                          const Icon(Icons.medical_services_rounded, color: Colors.redAccent, size: 16),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               'Medical Notes: ${mission.notes}',
-                              style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.3),
+                              style: const TextStyle(fontSize: 13, color: Colors.white70, height: 1.3),
                             ),
                           ),
                         ],
@@ -497,13 +624,13 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
             ),
             const SizedBox(height: 14),
 
-            // RECEIVING HOSPITAL INFO + CALL BUTTON CARD
+            // RECEIVING HOSPITAL & BED CAPACITY CARD
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: const Color(0xFF1E293B),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.blueAccent.withOpacity(0.3)),
+                border: Border.all(color: Colors.white.withOpacity(0.08)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -511,38 +638,41 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        'RECEIVING HOSPITAL DESTINATION',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.8,
-                          color: Colors.lightBlueAccent,
+                      const Flexible(
+                        child: Text(
+                          'RECEIVING HOSPITAL DESTINATION',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.8,
+                            color: Color(0xFF94A3B8),
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       if (mission.hospitalCapacity != null)
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: Colors.blue.withOpacity(0.2),
+                            color: const Color(0xFF1E3A8A).withOpacity(0.4),
                             borderRadius: BorderRadius.circular(6),
                             border: Border.all(color: Colors.blueAccent.withOpacity(0.4)),
                           ),
                           child: Text(
                             '${mission.hospitalCapacity} Beds Available',
-                            style: const TextStyle(fontSize: 11, color: Colors.lightBlueAccent, fontWeight: FontWeight.bold),
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.lightBlueAccent,
+                            ),
                           ),
                         ),
                     ],
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   Text(
                     mission.hospitalName,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
                   ),
                   if (mission.hospitalAddress != null) ...[
                     const SizedBox(height: 4),
@@ -551,140 +681,193 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
                       style: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
                     ),
                   ],
-                  const SizedBox(height: 12),
-                  // One-tap call hospital ER button
-                  ElevatedButton.icon(
-                    onPressed: mission.hospitalPhone != null
-                        ? () => _callPhone(mission.hospitalPhone!)
-                        : null,
-                    icon: const Icon(Icons.phone_in_talk_rounded, size: 18),
-                    label: Text(
-                      mission.hospitalPhone != null
-                          ? 'Call Hospital ER Desk (${mission.hospitalPhone})'
-                          : 'Hospital Phone Not Listed',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                  if (mission.hospitalPhone != null) ...[
+                    const SizedBox(height: 12),
+                    ElevatedButton.icon(
+                      onPressed: () => _callPhone(mission.hospitalPhone!),
+                      icon: const Icon(Icons.phone_rounded, size: 16),
+                      label: Text('Contact ER Desk (${mission.hospitalPhone})'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0F172A),
+                        foregroundColor: Colors.lightBlueAccent,
+                        side: const BorderSide(color: Colors.blueAccent),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
                     ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF1E3A8A),
-                      foregroundColor: Colors.white,
-                      disabledBackgroundColor: Colors.white10,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                  ),
+                  ],
                 ],
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 20),
 
-            // STATUS ERROR DISPLAY
-            if (_statusError != null) ...[
+            // ERROR DISPLAY (if transition failed)
+            if (_statusError != null)
               Container(
+                margin: const EdgeInsets.only(bottom: 16),
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: Colors.red.shade900.withOpacity(0.3),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.redAccent.withOpacity(0.4)),
+                  border: Border.all(color: Colors.redAccent),
                 ),
-                child: Text(
-                  _statusError!,
-                  style: const TextStyle(color: Colors.white, fontSize: 13),
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
-
-            // MISSION PROGRESSION MILESTONES
-            const Text(
-              'MISSION PROGRESSION MILESTONES',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.8,
-                color: Color(0xFF94A3B8),
-              ),
-            ),
-            const SizedBox(height: 8),
-
-            // Step 1: Accept & En Route to Patient
-            if (mission.status == 'Driver assigned' || mission.status == 'assigned')
-              ElevatedButton.icon(
-                onPressed: _isActionBusy ? null : () => _executeTransition('En route to patient'),
-                icon: const Icon(Icons.directions_run_rounded),
-                label: const Text('1. ACCEPT & EN ROUTE TO PATIENT'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.amber.shade700,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _statusError!,
+                        style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+                      ),
+                    ),
+                  ],
                 ),
               ),
 
-            // Step 2: Patient Picked Up / At Scene
-            if (mission.status == 'En route to patient')
-              ElevatedButton.icon(
-                onPressed: _isActionBusy ? null : () => _executeTransition('Patient picked up'),
-                icon: const Icon(Icons.airline_seat_flat_rounded),
-                label: const Text('2. ARRIVED AT SCENE & PATIENT LOADED'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.indigo.shade600,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                ),
-              ),
+            // TACTILE MISSION PROGRESSION ACTIONS
+            _buildTactileProgressionControls(currentStatus),
 
-            // Step 3: En Route to Hospital (triggers dynamic navigation switch!)
-            if (mission.status == 'Patient picked up')
-              ElevatedButton.icon(
-                onPressed: _isActionBusy ? null : () => _executeTransition('En route to hospital'),
-                icon: const Icon(Icons.local_hospital_rounded),
-                label: const Text('3. EN ROUTE TO HOSPITAL'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.purple.shade600,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                ),
-              ),
-
-            // Step 4: Arrived at Hospital / Hand Over
-            if (mission.status == 'En route to hospital')
-              ElevatedButton.icon(
-                onPressed: _isActionBusy ? null : () => _executeTransition('Arrived / intake'),
-                icon: const Icon(Icons.how_to_reg_rounded),
-                label: const Text('4. ARRIVED AT HOSPITAL / HAND OVER'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.teal.shade600,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                ),
-              ),
-
-            // Step 5: Completed
-            if (isArrivedAtHospital)
-              ElevatedButton.icon(
-                onPressed: _isActionBusy ? null : () => _executeTransition('Completed'),
-                icon: const Icon(Icons.task_alt_rounded),
-                label: const Text('5. COMPLETE MISSION & STAND BY'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF047857),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                ),
-              ),
-
-            const SizedBox(height: 24),
+            const SizedBox(height: 32),
           ],
         ),
       ),
     );
+  }
+
+  /// Builds oversized, glove-friendly milestone buttons based on current emergency status
+  Widget _buildTactileProgressionControls(String currentStatus) {
+    if (_isActionBusy) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E293B),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: const Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(color: Colors.redAccent, strokeWidth: 2),
+              ),
+              SizedBox(width: 12),
+              Text(
+                'Transmitting Milestone Update to Dispatch...',
+                style: TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (currentStatus == 'Driver assigned') {
+      return ElevatedButton(
+        onPressed: () => _executeTransition('En route to patient'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.amber.shade700,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 18),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          elevation: 4,
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.directions_car_filled_rounded, size: 24),
+            SizedBox(width: 10),
+            Text(
+              'EN ROUTE TO PATIENT',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: 0.8),
+            ),
+          ],
+        ),
+      );
+    } else if (currentStatus == 'En route to patient') {
+      return ElevatedButton(
+        onPressed: () => _executeTransition('Patient picked up'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF10B981),
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 18),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          elevation: 4,
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.airline_seat_flat_rounded, size: 24),
+            SizedBox(width: 10),
+            Text(
+              'PATIENT PICKED UP / ON BOARD',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, letterSpacing: 0.8),
+            ),
+          ],
+        ),
+      );
+    } else if (currentStatus == 'Patient picked up') {
+      return ElevatedButton(
+        onPressed: () => _executeTransition('En route to hospital'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.blueAccent.shade700,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 18),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          elevation: 4,
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.local_hospital_rounded, size: 24),
+            SizedBox(width: 10),
+            Text(
+              'EN ROUTE TO HOSPITAL',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: 0.8),
+            ),
+          ],
+        ),
+      );
+    } else if (currentStatus == 'En route to hospital') {
+      return ElevatedButton(
+        onPressed: () => _executeTransition('Arrived / intake'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.purpleAccent.shade700,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 18),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          elevation: 4,
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.how_to_reg_rounded, size: 24),
+            SizedBox(width: 10),
+            Text(
+              'ARRIVED AT ER / INTAKE HANDOVER',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, letterSpacing: 0.8),
+            ),
+          ],
+        ),
+      );
+    } else {
+      // Completed or Other State
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E293B),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white12),
+        ),
+        child: Center(
+          child: Text(
+            'Current Run Milestone: $currentStatus',
+            style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold),
+          ),
+        ),
+      );
+    }
   }
 }
