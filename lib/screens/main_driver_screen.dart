@@ -72,10 +72,42 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
             final record = payload.newRecord;
             final String? reqStatus = record['status']?.toString();
             final String? driverId = record['driver_id']?.toString();
+            final String? recordId = record['id']?.toString();
 
-            // Check if this is an assigned mission for this driver
+            final bool isFinishedOrCancelled = reqStatus == 'Completed' ||
+                reqStatus == 'completed' ||
+                reqStatus == 'Cancelled / failed' ||
+                reqStatus == 'cancelled' ||
+                reqStatus == 'Declined' ||
+                reqStatus == 'aborted';
+
+            // 1. If currently active mission was cancelled or completed, IMMEDIATELY CLEAR IT
+            if (_activeMission?.id == recordId && isFinishedOrCancelled) {
+              if (mounted) {
+                setState(() {
+                  _activeMission = null;
+                });
+              }
+              if (reqStatus?.toLowerCase().contains('cancel') == true) {
+                _triggerAlarm('⚠️ MISSION CANCELLED: Dispatcher has cancelled this emergency run.');
+              }
+              _fetchJobHistory();
+              _fetchActiveMission(silent: true);
+              _fetchAvailableJobs(silent: true);
+              return;
+            }
+
+            // 2. If this is an assigned mission for this driver
             if (driverId != null && driverId == widget.driver.id) {
-              // Immediately hydrate from the WebSocket payload so the screen updates instantaneously!
+              if (isFinishedOrCancelled) {
+                if (mounted) {
+                  setState(() => _activeMission = null);
+                }
+                _fetchJobHistory();
+                return;
+              }
+
+              // Active run assigned to this driver
               try {
                 final fastModel = EmergencyRequestModel.fromJson(Map<String, dynamic>.from(record));
                 if (mounted) {
@@ -92,8 +124,13 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
               if (!_isAudioMuted && (payload.eventType == PostgresChangeEvent.insert || reqStatus == 'Driver assigned')) {
                 _triggerAlarm('🚨 DISPATCH: You have been assigned an emergency run!');
               }
+            } else if (_activeMission?.id == recordId && driverId != widget.driver.id) {
+              // Reassigned away to another driver
+              if (mounted) {
+                setState(() => _activeMission = null);
+              }
+              _fetchActiveMission(silent: true);
             } else if (reqStatus == 'pending' || reqStatus == 'broadcasted' || reqStatus == 'Pending' || reqStatus == 'Requested' || reqStatus == 'Matching') {
-              // Open dispatch broadcasted to fleet
               _fetchAvailableJobs(silent: true);
               if (!_isAudioMuted) {
                 _triggerAlarm('🚨 NEW EMERGENCY BROADCAST! Tap Available Jobs to view.');
@@ -169,7 +206,8 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
         if (activeRecord != null) {
           _activeMission = EmergencyRequestModel.fromJson(Map<String, dynamic>.from(activeRecord as Map));
           _activeFetchError = null;
-        } else if (_activeMission == null) {
+        } else {
+          // If no active run exists in database, cleanly clear mission from screen
           _activeMission = null;
         }
         _isLoadingActive = false;

@@ -30,18 +30,30 @@ class ActiveJobTab extends StatefulWidget {
 class _ActiveJobTabState extends State<ActiveJobTab> {
   bool _isActionBusy = false;
   String? _statusError;
+  String? _optimisticStatus;
   bool _showTacticalMap = true;
   bool _isMapFullscreen = false;
+
+  @override
+  void didUpdateWidget(covariant ActiveJobTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.activeMission?.status != oldWidget.activeMission?.status) {
+      _optimisticStatus = null;
+    }
+  }
 
   Future<void> _executeTransition(String nextStatus) async {
     if (widget.activeMission == null) return;
 
+    final reqId = widget.activeMission!.id;
+    final previousStatus = widget.activeMission!.status;
+
+    // Instant optimistic update (0ms latency feel!)
     setState(() {
+      _optimisticStatus = nextStatus;
       _isActionBusy = true;
       _statusError = null;
     });
-
-    final reqId = widget.activeMission!.id;
 
     try {
       // 1. Try driver_advance_milestone RPC first (trigger-safe)
@@ -95,6 +107,7 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
         clean = clean.split('Exception:').last.trim();
       }
       setState(() {
+        _optimisticStatus = previousStatus; // Revert on failure
         _statusError = 'Milestone transition error: $clean';
       });
     } finally {
@@ -292,8 +305,12 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
     }
 
     // 2. ACTIVE MISSION IN PROGRESS
-    final currentStatus = mission.status;
-    final isHeadingToHospital = mission.isEnRouteToHospital || mission.isArrivedAtHospital;
+    final currentStatus = _optimisticStatus ?? mission.status;
+    final isHeadingToHospital = currentStatus == 'Patient picked up' ||
+        currentStatus == 'En route to hospital' ||
+        currentStatus == 'Arrived / intake' ||
+        mission.isEnRouteToHospital ||
+        mission.isArrivedAtHospital;
 
     // Fullscreen Map View Mode
     if (_isMapFullscreen) {
@@ -684,7 +701,7 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
                     children: [
                       const Flexible(
                         child: Text(
-                          'RECEIVING HOSPITAL DESTINATION',
+                          'RECEIVING HOSPITAL',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w800,
@@ -781,122 +798,83 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
 
   /// Builds oversized, glove-friendly milestone buttons based on current emergency status
   Widget _buildTactileProgressionControls(String currentStatus) {
-    if (_isActionBusy) {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1E293B),
-          borderRadius: BorderRadius.circular(16),
+    final s = currentStatus.toLowerCase().trim();
+
+    Widget buildButton({
+      required VoidCallback onPressed,
+      required Color color,
+      required IconData icon,
+      required String label,
+    }) {
+      return ElevatedButton(
+        onPressed: _isActionBusy ? null : onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: color.withOpacity(0.7),
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          elevation: 4,
         ),
-        child: const Center(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (_isActionBusy) ...[
+              const SizedBox(
                 width: 20,
                 height: 20,
-                child: CircularProgressIndicator(color: Colors.redAccent, strokeWidth: 2),
+                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.2),
               ),
-              SizedBox(width: 12),
-              Text(
-                'Transmitting Milestone Update to Dispatch...',
-                style: TextStyle(color: Colors.white70, fontSize: 13),
-              ),
+              const SizedBox(width: 12),
+            ] else ...[
+              Icon(icon, size: 22),
+              const SizedBox(width: 10),
             ],
-          ),
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       );
     }
 
-    final s = currentStatus.toLowerCase().trim();
-
     if (s == 'hospital confirmed' || s == 'driver assigned' || s == 'requested' || s == 'matching' || s == 'assigned') {
-      return ElevatedButton(
+      return buildButton(
         onPressed: () => _executeTransition('En route to patient'),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.amber.shade700,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 18),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          elevation: 4,
-        ),
-        child: const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.directions_car_filled_rounded, size: 24),
-            SizedBox(width: 10),
-            Text(
-              '1. START RUN: EN ROUTE TO PATIENT',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, letterSpacing: 0.8),
-            ),
-          ],
-        ),
+        color: Colors.amber.shade700,
+        icon: Icons.directions_car_filled_rounded,
+        label: '1. START RUN: EN ROUTE TO PATIENT',
       );
     } else if (s == 'en route to patient') {
-      return ElevatedButton(
+      return buildButton(
         onPressed: () => _executeTransition('Patient picked up'),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF10B981),
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 18),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          elevation: 4,
-        ),
-        child: const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.airline_seat_flat_rounded, size: 24),
-            SizedBox(width: 10),
-            Text(
-              '2. PATIENT PICKED UP / ON BOARD',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, letterSpacing: 0.8),
-            ),
-          ],
-        ),
+        color: const Color(0xFF10B981),
+        icon: Icons.airline_seat_flat_rounded,
+        label: '2. PATIENT PICKED UP / ON BOARD',
       );
     } else if (s == 'patient picked up') {
-      return ElevatedButton(
+      return buildButton(
         onPressed: () => _executeTransition('En route to hospital'),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.blueAccent.shade700,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 18),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          elevation: 4,
-        ),
-        child: const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.local_hospital_rounded, size: 24),
-            SizedBox(width: 10),
-            Text(
-              '3. EN ROUTE TO HOSPITAL',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: 0.8),
-            ),
-          ],
-        ),
+        color: Colors.blueAccent.shade700,
+        icon: Icons.local_hospital_rounded,
+        label: '3. EN ROUTE TO HOSPITAL',
       );
     } else if (s == 'en route to hospital') {
-      return ElevatedButton(
+      return buildButton(
         onPressed: () => _executeTransition('Arrived / intake'),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.purpleAccent.shade700,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 18),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          elevation: 4,
-        ),
-        child: const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.how_to_reg_rounded, size: 24),
-            SizedBox(width: 10),
-            Text(
-              '4. ARRIVED AT ER / INTAKE HANDOVER',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, letterSpacing: 0.8),
-            ),
-          ],
-        ),
+        color: Colors.purpleAccent.shade700,
+        icon: Icons.how_to_reg_rounded,
+        label: '4. ARRIVED AT ER / INTAKE HANDOVER',
       );
     } else if (s == 'arrived / intake') {
       return Container(

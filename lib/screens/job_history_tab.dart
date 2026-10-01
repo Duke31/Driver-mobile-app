@@ -106,31 +106,68 @@ class JobHistoryTab extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF10B981).withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.check_circle_rounded, color: Color(0xFF34D399), size: 14),
-                          SizedBox(width: 4),
-                          Text(
-                            'COMPLETED RUN',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.5,
-                              color: Color(0xFF34D399),
-                            ),
+                    Builder(
+                      builder: (context) {
+                        final String st = (run.status).trim();
+                        final bool isCancelled = st.toLowerCase().contains('cancel') ||
+                            st.toLowerCase().contains('abort') ||
+                            st.toLowerCase().contains('fail') ||
+                            st.toLowerCase().contains('decline');
+                        final bool isCompleted = st.toLowerCase() == 'completed' || st.toLowerCase() == 'admitted';
+
+                        final Color badgeBg = isCancelled
+                            ? Colors.red.shade900.withOpacity(0.3)
+                            : isCompleted
+                                ? const Color(0xFF10B981).withOpacity(0.18)
+                                : Colors.amber.shade900.withOpacity(0.3);
+
+                        final Color badgeFg = isCancelled
+                            ? const Color(0xFFF87171)
+                            : isCompleted
+                                ? const Color(0xFF34D399)
+                                : const Color(0xFFFBBF24);
+
+                        final IconData badgeIcon = isCancelled
+                            ? Icons.cancel_outlined
+                            : isCompleted
+                                ? Icons.check_circle_rounded
+                                : Icons.info_outline_rounded;
+
+                        final String label = isCancelled
+                            ? 'CANCELLED / ABORTED'
+                            : isCompleted
+                                ? 'COMPLETED RUN'
+                                : st.toUpperCase();
+
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: badgeBg,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: badgeFg.withOpacity(0.4)),
                           ),
-                        ],
-                      ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(badgeIcon, color: badgeFg, size: 14),
+                              const SizedBox(width: 5),
+                              Text(
+                                label,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.5,
+                                  color: badgeFg,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
                     Text(
                       completedTime.length >= 10 ? completedTime.substring(0, 10) : completedTime,
-                      style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8), fontWeight: FontWeight.w500),
                     ),
                   ],
                 ),
@@ -153,7 +190,7 @@ class JobHistoryTab extends StatelessWidget {
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        'Pickup: ${run.patientAddress ?? "N/A"}',
+                        'Pickup: ${run.patientAddress ?? "Coordinates given"}',
                         style: const TextStyle(fontSize: 13, color: Colors.white70),
                       ),
                     ),
@@ -161,18 +198,41 @@ class JobHistoryTab extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
 
-                // Destination hospital
-                Row(
-                  children: [
-                    const Icon(Icons.local_hospital_rounded, color: Colors.lightBlueAccent, size: 16),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        'Delivered to: ${run.hospitalName}',
-                        style: const TextStyle(fontSize: 13, color: Colors.white70),
-                      ),
-                    ),
-                  ],
+                // Destination hospital / Outcome
+                Builder(
+                  builder: (context) {
+                    final bool isCancelled = run.status.toLowerCase().contains('cancel') ||
+                        run.status.toLowerCase().contains('abort') ||
+                        run.status.toLowerCase().contains('fail');
+
+                    if (isCancelled) {
+                      return Row(
+                        children: [
+                          const Icon(Icons.do_not_disturb_on_rounded, color: Colors.redAccent, size: 16),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Mission Cancelled by Dispatcher / Caller',
+                              style: TextStyle(fontSize: 13, color: Colors.red.shade300, fontStyle: FontStyle.italic),
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+
+                    return Row(
+                      children: [
+                        const Icon(Icons.local_hospital_rounded, color: Colors.lightBlueAccent, size: 16),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Delivered to: ${run.hospitalName}',
+                            style: const TextStyle(fontSize: 13, color: Colors.white70),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ],
             ),

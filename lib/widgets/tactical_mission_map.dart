@@ -35,6 +35,7 @@ class _TacticalMissionMapState extends State<TacticalMissionMap> {
   StreamSubscription<Position>? _positionStream;
   double _distanceMeters = 0;
   int _estimatedMinutes = 0;
+  bool _isMapLocked = true; // Locked tactical view by default to prevent accidental sliding
 
   @override
   void initState() {
@@ -312,6 +313,11 @@ class _TacticalMissionMapState extends State<TacticalMissionMap> {
               initialZoom: 13.5,
               minZoom: 3,
               maxZoom: 18,
+              interactionOptions: InteractionOptions(
+                flags: (_isMapLocked && !widget.isFullscreen)
+                    ? InteractiveFlag.none
+                    : InteractiveFlag.all,
+              ),
             ),
             children: [
               TileLayer(
@@ -388,13 +394,75 @@ class _TacticalMissionMapState extends State<TacticalMissionMap> {
             ),
           ),
 
-          // Floating Action Buttons (Fit Bounds, Center, External Maps)
+          // Tactical Lock/Unlock Status Badge in bottom-left
+          Positioned(
+            bottom: 12,
+            left: 12,
+            child: GestureDetector(
+              onTap: () {
+                setState(() => _isMapLocked = !_isMapLocked);
+                if (_isMapLocked) _fitBounds();
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F172A).withOpacity(0.9),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: _isMapLocked ? const Color(0xFF34D399).withOpacity(0.5) : Colors.amberAccent.withOpacity(0.6),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _isMapLocked ? Icons.lock_outline_rounded : Icons.lock_open_rounded,
+                      size: 13,
+                      color: _isMapLocked ? const Color(0xFF34D399) : Colors.amberAccent,
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      _isMapLocked ? 'LOCKED TACTICAL' : 'FREE PAN / ZOOM',
+                      style: TextStyle(
+                        color: _isMapLocked ? const Color(0xFF34D399) : Colors.amberAccent,
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // Floating Action Buttons (Lock Toggle, Fit Bounds, Center, External Maps)
           Positioned(
             bottom: 10,
             right: 10,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Lock / Unlock View Toggle
+                FloatingActionButton.small(
+                  heroTag: 'map_lock_toggle_${widget.isFullscreen}',
+                  backgroundColor: _isMapLocked ? const Color(0xFF0F172A) : Colors.amber.shade900,
+                  foregroundColor: _isMapLocked ? Colors.white70 : Colors.white,
+                  tooltip: _isMapLocked ? 'Map Locked (Swipe page smoothly)' : 'Map Unlocked (Free pan/zoom)',
+                  onPressed: () {
+                    setState(() {
+                      _isMapLocked = !_isMapLocked;
+                    });
+                    if (_isMapLocked) {
+                      _fitBounds();
+                    }
+                  },
+                  child: Icon(
+                    _isMapLocked ? Icons.lock_outline_rounded : Icons.lock_open_rounded,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(height: 6),
                 FloatingActionButton.small(
                   heroTag: 'map_fit_bounds_${widget.isFullscreen}',
                   backgroundColor: const Color(0xFF0F172A),
@@ -420,9 +488,9 @@ class _TacticalMissionMapState extends State<TacticalMissionMap> {
                   backgroundColor: widget.isHeadingToHospital ? Colors.blueAccent : Colors.redAccent,
                   foregroundColor: Colors.white,
                   icon: const Icon(Icons.navigation_rounded, size: 16),
-                  label: Text(
-                    widget.isHeadingToHospital ? 'GPS Nav' : 'GPS Nav',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                  label: const Text(
+                    'GPS Nav',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                   ),
                   onPressed: _launchExternalNavigation,
                 ),
