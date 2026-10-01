@@ -6,6 +6,7 @@ class AvailableJobsTab extends StatefulWidget {
   final List<EmergencyRequestModel> availableJobs;
   final bool isLoading;
   final String? errorMessage;
+  final String? currentDriverId;
   final VoidCallback onRefresh;
   final Function(EmergencyRequestModel) onMissionAccepted;
 
@@ -14,6 +15,7 @@ class AvailableJobsTab extends StatefulWidget {
     required this.availableJobs,
     required this.isLoading,
     this.errorMessage,
+    this.currentDriverId,
     required this.onRefresh,
     required this.onMissionAccepted,
   });
@@ -297,32 +299,53 @@ class _AvailableJobsTabState extends State<AvailableJobsTab> {
                 ],
                 const SizedBox(height: 14),
 
-                // Accept Call Action Button
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: isAccepting ? null : () => _acceptJob(job),
-                    icon: isAccepting
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                          )
-                        : const Icon(Icons.check_circle_rounded, size: 20),
-                    label: Text(
-                      isAccepting ? 'CLAIMING MISSION...' : '🚨 ACCEPT EMERGENCY RUN',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 0.5),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.redAccent,
-                      foregroundColor: Colors.white,
-                      disabledBackgroundColor: Colors.redAccent.withOpacity(0.5),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      elevation: 2,
+                // Action Button: Either already assigned to this unit or available to claim
+                if (widget.currentDriverId != null && job.driverId == widget.currentDriverId) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () => widget.onMissionAccepted(job),
+                      icon: const Icon(Icons.arrow_forward_rounded, size: 20),
+                      label: const Text(
+                        '🚑 ASSIGNED TO YOU — VIEW ACTIVE RUN',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 0.5),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF10B981),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 3,
+                      ),
                     ),
                   ),
-                ),
+                ] else ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: isAccepting ? null : () => _acceptJob(job),
+                      icon: isAccepting
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            )
+                          : const Icon(Icons.check_circle_rounded, size: 20),
+                      label: Text(
+                        isAccepting ? 'CLAIMING MISSION...' : '🚨 ACCEPT EMERGENCY RUN',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 0.5),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.redAccent,
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor: Colors.redAccent.withOpacity(0.5),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 2,
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           );

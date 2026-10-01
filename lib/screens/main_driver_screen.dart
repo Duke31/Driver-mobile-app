@@ -446,6 +446,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
                     availableJobs: _availableJobs,
                     isLoading: _isLoadingAvailable,
                     errorMessage: _availableFetchError,
+                    currentDriverId: widget.driver.id,
                     onRefresh: () => _fetchAvailableJobs(),
                     onMissionAccepted: _onMissionAccepted,
                   ),
