@@ -67,10 +67,10 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
       return;
     }
 
-    // If driver entered plain username or phone e.g. "tunde" or "08035551212", format as email if needed
+    // If driver entered plain username or phone, format as email if needed
     String email = input;
     if (!email.contains('@')) {
-      email = '$input@ogbomoso-ems.ng';
+      email = '$input@ems-dispatch.org';
     }
 
     setState(() {
@@ -194,7 +194,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'OGBOMOSO EMS NETWORK',
+                          'EMERGENCY MEDICAL DISPATCH',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w800,
@@ -267,7 +267,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
                 keyboardType: TextInputType.emailAddress,
                 style: const TextStyle(color: Colors.white, fontSize: 16),
                 decoration: InputDecoration(
-                  hintText: 'e.g. driver.tunde@ogbomoso-ems.ng',
+                  hintText: 'e.g. driver@ems-fleet.org',
                   hintStyle: const TextStyle(color: Colors.white38),
                   prefixIcon: const Icon(Icons.badge_rounded, color: Colors.white60),
                   filled: true,

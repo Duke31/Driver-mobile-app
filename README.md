@@ -1,6 +1,6 @@
 # 🚑 Ambulance Driver & Emergency Telemetry Native App
 
-Native Flutter mobile application for ambulance drivers and emergency medical responders in the Ogbomoso Emergency Dispatch Network.
+Native Flutter mobile application for ambulance drivers and emergency medical responders in the Emergency Dispatch Fleet Network.
 
 ---
 

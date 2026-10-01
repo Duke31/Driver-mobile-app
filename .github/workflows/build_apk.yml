@@ -27,7 +27,7 @@ jobs:
 
       - name: Ensure Android Platform Scaffold
         run: |
-          flutter create --platforms=android --project-name ambulance_driver_app --org com.ogbomoso .
+          flutter create --platforms=android --project-name ambulance_driver_app --org com.ems.dispatch .
 
       - name: Configure Android Permissions & Desugaring Support
         run: |

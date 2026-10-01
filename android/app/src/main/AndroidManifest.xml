@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.ogbomoso.ambulance_driver_app">
+    package="com.ems.dispatch.ambulance_driver_app">
 
     <!-- Network & Internet -->
     <uses-permission android:name="android.permission.INTERNET"/>

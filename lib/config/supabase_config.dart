@@ -1,5 +1,5 @@
 class SupabaseConfig {
-  // Pre-configured with the Ogbomoso Emergency Dispatch backend
+  // Pre-configured with the Emergency Dispatch backend
   static const String url = 'https://aogknxtyvzpzqkgmgtsv.supabase.co';
   static const String anonKey = 'sb_publishable_-SZtZ9gUc3mGdxe5DKxKrA_REbC9iXt';
 
