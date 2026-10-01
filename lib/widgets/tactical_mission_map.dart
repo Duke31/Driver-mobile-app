@@ -115,10 +115,10 @@ class _TacticalMissionMapState extends State<TacticalMissionMap> {
   void _fitBounds() {
     final target = _targetLatLng;
     if (_currentPosition != null && target != null) {
-      final bounds = LatLngBounds(
+      final bounds = LatLngBounds.fromPoints([
         LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
         target,
-      );
+      ]);
       _mapController.fitCamera(
         CameraFit.bounds(
           bounds: bounds,
@@ -281,7 +281,6 @@ class _TacticalMissionMapState extends State<TacticalMissionMap> {
           points: [ambulanceLatLng, target],
           color: widget.isHeadingToHospital ? Colors.lightBlueAccent : Colors.redAccent,
           strokeWidth: 4.0,
-          isDotted: true,
         ),
       );
     }
