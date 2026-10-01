@@ -58,7 +58,7 @@ class EmergencyRequestModel {
       contactPhone: json['contact_phone'] as String?,
       patientAgeBand: json['patient_age_band'] as String?,
       priority: json['priority']?.toString(),
-      hospital: json['hospitals'] as Map<String, dynamic>?,
+      hospital: json['hospitals'] != null ? Map<String, dynamic>.from(json['hospitals'] as Map) : null,
     );
   }
 

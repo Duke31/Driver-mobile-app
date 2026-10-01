@@ -290,24 +290,43 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
           children: [
             // Live Audible Siren Banner (if dispatch triggered)
             if (_incomingAlertMessage != null)
-              Container(
+              Material(
                 color: Colors.red.shade900,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                child: Row(
-                  children: [
-                    const Icon(Icons.crisis_alert_rounded, color: Colors.white, size: 24),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        _incomingAlertMessage!,
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
-                      ),
+                child: InkWell(
+                  onTap: () {
+                    _dismissAlarm();
+                    setState(() => _currentTabIndex = 0);
+                    _fetchActiveMission(silent: false);
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.crisis_alert_rounded, color: Colors.white, size: 24),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _incomingAlertMessage!,
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                              ),
+                              const SizedBox(height: 2),
+                              const Text(
+                                'Tap here to open Active Mission console →',
+                                style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white),
+                          onPressed: _dismissAlarm,
+                        ),
+                      ],
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: _dismissAlarm,
-                    ),
-                  ],
+                  ),
                 ),
               ),
 
