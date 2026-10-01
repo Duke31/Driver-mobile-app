@@ -1,0 +1,71 @@
+name: Build Android Driver APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Compile & Package Ambulance Driver APK
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Ensure Android Platform Scaffold
+        run: |
+          flutter create --platforms=android --project-name ambulance_driver_app --org com.ogbomoso .
+
+      - name: Configure Android Permissions & Hardware Flags
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("android/app/src/main/AndroidManifest.xml")
+          if p.exists():
+              text = p.read_text()
+              permissions = [
+                  '<uses-permission android:name="android.permission.INTERNET"/>',
+                  '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>',
+                  '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>',
+                  '<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>',
+                  '<uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>',
+                  '<uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>',
+                  '<uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>',
+                  '<uses-permission android:name="android.permission.WAKE_LOCK"/>',
+                  '<uses-permission android:name="android.permission.BATTERY_STATS"/>',
+                  '<uses-permission android:name="android.permission.CALL_PHONE"/>',
+                  '<uses-permission android:name="android.permission.VIBRATE"/>',
+              ]
+              to_add = [perm for perm in permissions if perm not in text]
+              if to_add:
+                  idx = text.find(">")
+                  new_text = text[:idx+1] + "\n    " + "\n    ".join(to_add) + text[idx+1:]
+                  p.write_text(new_text)
+                  print("Added permissions successfully.")
+          PY
+
+      - name: Install Flutter Dependencies
+        run: flutter pub get
+
+      - name: Build Release APK
+        run: flutter build apk --release
+
+      - name: Upload Driver APK to GitHub Actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: ambulance-driver-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 14
