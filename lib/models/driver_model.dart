@@ -1,8 +1,11 @@
 class DriverModel {
   final String id;
+  final String? userId;
   final String displayName;
   final String? vehicleLabel;
   final String? hospitalId;
+  final String? hospitalName;
+  final String? phone;
   final bool active;
   final String? status;
   final double? currentLat;
@@ -15,9 +18,12 @@ class DriverModel {
 
   DriverModel({
     required this.id,
+    this.userId,
     required this.displayName,
     this.vehicleLabel,
     this.hospitalId,
+    this.hospitalName,
+    this.phone,
     this.active = true,
     this.status,
     this.currentLat,
@@ -31,10 +37,13 @@ class DriverModel {
 
   factory DriverModel.fromJson(Map<String, dynamic> json) {
     return DriverModel(
-      id: json['id'] as String,
+      id: (json['id'] ?? '') as String,
+      userId: json['user_id'] as String?,
       displayName: (json['display_name'] as String?) ?? 'Ambulance Unit',
       vehicleLabel: json['vehicle_label'] as String?,
       hospitalId: json['hospital_id'] as String?,
+      hospitalName: json['hospital_name'] as String?,
+      phone: json['phone'] as String?,
       active: (json['active'] as bool?) ?? true,
       status: json['status'] as String?,
       currentLat: (json['current_lat'] as num?)?.toDouble(),
@@ -50,9 +59,12 @@ class DriverModel {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'user_id': userId,
       'display_name': displayName,
       'vehicle_label': vehicleLabel,
       'hospital_id': hospitalId,
+      'hospital_name': hospitalName,
+      'phone': phone,
       'active': active,
       'status': status,
     };

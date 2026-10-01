@@ -1,9 +1,7 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/driver_model.dart';
-import 'mission_screen.dart';
+import 'main_driver_screen.dart';
 
 class DriverLoginScreen extends StatefulWidget {
   const DriverLoginScreen({super.key});
@@ -13,45 +11,46 @@ class DriverLoginScreen extends StatefulWidget {
 }
 
 class _DriverLoginScreenState extends State<DriverLoginScreen> {
-  final _phoneController = TextEditingController();
-  final _pinController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _isCheckingSavedSession = true;
-  bool _rememberMe = true;
-  bool _obscurePin = true;
+  bool _obscurePassword = true;
   String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    _checkSavedSession();
+    _checkExistingAuthSession();
   }
 
   @override
   void dispose() {
-    _phoneController.dispose();
-    _pinController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
-  Future<void> _checkSavedSession() async {
+  Future<void> _checkExistingAuthSession() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final savedDriverJson = prefs.getString('saved_driver_session');
-      if (savedDriverJson != null) {
-        final Map<String, dynamic> data = jsonDecode(savedDriverJson);
-        final driver = DriverModel.fromJson(data);
-        if (mounted) {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-              builder: (_) => MissionScreen(driver: driver),
-            ),
-          );
-          return;
+      final session = Supabase.instance.client.auth.currentSession;
+      if (session != null && !session.isExpired) {
+        // Attempt to load driver profile linked to this authenticated session
+        final res = await Supabase.instance.client.rpc('get_current_driver');
+        if (res != null) {
+          final driver = DriverModel.fromJson(Map<String, dynamic>.from(res as Map));
+          if (mounted) {
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(
+                builder: (_) => MainDriverScreen(driver: driver),
+              ),
+            );
+            return;
+          }
         }
       }
     } catch (e) {
-      debugPrint('Error restoring saved session: $e');
+      debugPrint('Session restore error: $e');
     } finally {
       if (mounted) {
         setState(() => _isCheckingSavedSession = false);
@@ -60,12 +59,18 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
   }
 
   Future<void> _signIn() async {
-    final identifier = _phoneController.text.trim();
-    final pin = _pinController.text.trim();
+    String input = _emailController.text.trim();
+    final password = _passwordController.text.trim();
 
-    if (identifier.isEmpty) {
-      setState(() => _errorMessage = 'Please enter your driver phone number or unit ID.');
+    if (input.isEmpty || password.isEmpty) {
+      setState(() => _errorMessage = 'Please enter both your driver email/identifier and password.');
       return;
+    }
+
+    // If driver entered plain username or phone e.g. "tunde" or "08035551212", format as email if needed
+    String email = input;
+    if (!email.contains('@')) {
+      email = '$input@ogbomoso-ems.ng';
     }
 
     setState(() {
@@ -74,29 +79,51 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
     });
 
     try {
-      // SECURITY DEFINER RPC: Authenticates specific driver without exposing other drivers
-      final res = await Supabase.instance.client.rpc('driver_authenticate', params: {
-        'p_identifier': identifier,
-        'p_pin': pin.isEmpty ? '1234' : pin,
-      });
+      // 1. Native Supabase Auth Sign In (Option B)
+      final authResponse = await Supabase.instance.client.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
 
-      if (res == null) {
-        throw Exception('Authentication returned empty result.');
+      if (authResponse.user == null) {
+        throw Exception('Sign in failed. No active user returned.');
       }
 
-      final Map<String, dynamic> driverData = Map<String, dynamic>.from(res as Map);
-      final driver = DriverModel.fromJson(driverData);
+      // 2. Fetch driver profile linked to this auth user
+      final driverRes = await Supabase.instance.client.rpc('get_current_driver');
+      
+      if (driverRes == null) {
+        // Fallback: If no driver row linked yet, construct from auth metadata or prompt admin
+        final user = authResponse.user!;
+        final fallbackDriver = DriverModel(
+          id: user.id,
+          userId: user.id,
+          displayName: user.userMetadata?['display_name'] ?? user.email?.split('@').first ?? 'Ambulance Unit',
+          vehicleLabel: user.userMetadata?['vehicle_label'] ?? 'Ambulance Unit',
+          active: true,
+        );
 
-      // Save session if remember me is checked
-      if (_rememberMe) {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('saved_driver_session', jsonEncode(driverData));
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => MainDriverScreen(driver: fallbackDriver),
+            ),
+          );
+        }
+        return;
+      }
+
+      final driver = DriverModel.fromJson(Map<String, dynamic>.from(driverRes as Map));
+
+      if (!driver.active) {
+        await Supabase.instance.client.auth.signOut();
+        throw Exception('Your ambulance unit is currently marked inactive by dispatch.');
       }
 
       if (mounted) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
-            builder: (_) => MissionScreen(driver: driver),
+            builder: (_) => MainDriverScreen(driver: driver),
           ),
         );
       }
@@ -105,8 +132,8 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
       if (cleanMsg.contains('Exception:')) {
         cleanMsg = cleanMsg.split('Exception:').last.trim();
       }
-      if (cleanMsg.contains('message:')) {
-        cleanMsg = cleanMsg.split('message:').last.split(',').first.trim();
+      if (cleanMsg.contains('Invalid login credentials')) {
+        cleanMsg = 'Invalid email or password. Please verify your credentials.';
       }
       setState(() {
         _errorMessage = cleanMsg;
@@ -121,7 +148,17 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
       return const Scaffold(
         backgroundColor: Color(0xFF0F172A),
         body: Center(
-          child: CircularProgressIndicator(color: Colors.redAccent),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(color: Colors.redAccent),
+              SizedBox(height: 16),
+              Text(
+                'Checking Driver Session...',
+                style: TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -135,7 +172,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 20),
-              // App Logo & Badge
+              // App Logo & Header
               Row(
                 children: [
                   Container(
@@ -157,7 +194,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'EMERGENCY DISPATCH',
+                          'OGBOMOSO EMS NETWORK',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w800,
@@ -166,7 +203,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
                           ),
                         ),
                         Text(
-                          'Driver Terminal',
+                          'Ambulance Terminal',
                           style: TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.bold,
@@ -181,7 +218,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
               ),
               const SizedBox(height: 24),
 
-              // Welcome Card
+              // Info Banner
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -202,7 +239,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
                     ),
                     SizedBox(height: 6),
                     Text(
-                      'Sign in with your registered driver phone number and personal security PIN to access your assigned ambulance console.',
+                      'Sign in with your individual EMS account credentials to access your live mission console, view available dispatches, and track hospital intake.',
                       style: TextStyle(
                         fontSize: 13,
                         color: Color(0xFF94A3B8),
@@ -214,9 +251,9 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
               ),
               const SizedBox(height: 24),
 
-              // Phone Number / Unit ID Field
+              // Email / Username field
               const Text(
-                'PHONE NUMBER OR DRIVER ID',
+                'DRIVER EMAIL OR IDENTIFIER',
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
@@ -226,13 +263,13 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
               ),
               const SizedBox(height: 8),
               TextField(
-                controller: _phoneController,
-                keyboardType: TextInputType.phone,
+                controller: _emailController,
+                keyboardType: TextInputType.emailAddress,
                 style: const TextStyle(color: Colors.white, fontSize: 16),
                 decoration: InputDecoration(
-                  hintText: 'e.g. 08035551212',
+                  hintText: 'e.g. driver.tunde@ogbomoso-ems.ng',
                   hintStyle: const TextStyle(color: Colors.white38),
-                  prefixIcon: const Icon(Icons.phone_android_rounded, color: Colors.white60),
+                  prefixIcon: const Icon(Icons.badge_rounded, color: Colors.white60),
                   filled: true,
                   fillColor: const Color(0xFF1E293B),
                   border: OutlineInputBorder(
@@ -247,9 +284,9 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
               ),
               const SizedBox(height: 18),
 
-              // PIN / Password Field
+              // Password field
               const Text(
-                'SECURITY PIN',
+                'PASSWORD',
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
@@ -259,20 +296,19 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
               ),
               const SizedBox(height: 8),
               TextField(
-                controller: _pinController,
-                obscureText: _obscurePin,
-                keyboardType: TextInputType.number,
-                style: const TextStyle(color: Colors.white, fontSize: 16, letterSpacing: 2.0),
+                controller: _passwordController,
+                obscureText: _obscurePassword,
+                style: const TextStyle(color: Colors.white, fontSize: 16),
                 decoration: InputDecoration(
-                  hintText: 'Default PIN is 1234',
-                  hintStyle: const TextStyle(color: Colors.white38, letterSpacing: 0),
+                  hintText: 'Enter your password',
+                  hintStyle: const TextStyle(color: Colors.white38),
                   prefixIcon: const Icon(Icons.lock_outline_rounded, color: Colors.white60),
                   suffixIcon: IconButton(
                     icon: Icon(
-                      _obscurePin ? Icons.visibility_off : Icons.visibility,
+                      _obscurePassword ? Icons.visibility_off : Icons.visibility,
                       color: Colors.white60,
                     ),
-                    onPressed: () => setState(() => _obscurePin = !_obscurePin),
+                    onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                   ),
                   filled: true,
                   fillColor: const Color(0xFF1E293B),
@@ -286,23 +322,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
-
-              // Remember Me Checkbox
-              Row(
-                children: [
-                  Checkbox(
-                    value: _rememberMe,
-                    activeColor: Colors.redAccent,
-                    onChanged: (val) => setState(() => _rememberMe = val ?? true),
-                  ),
-                  const Text(
-                    'Keep this ambulance unit signed in',
-                    style: TextStyle(color: Colors.white70, fontSize: 13),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
 
               // Error display
               if (_errorMessage != null) ...[
@@ -352,7 +372,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
                           Icon(Icons.login_rounded, size: 20),
                           SizedBox(width: 8),
                           Text(
-                            'SIGN IN TO DASHBOARD',
+                            'SIGN IN AS AMBULANCE DRIVER',
                             style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, letterSpacing: 0.5),
                           ),
                         ],
@@ -363,7 +383,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
               // Footer Note
               const Center(
                 child: Text(
-                  'Ogbomoso Emergency Dispatch Network\nAuthorized EMS Personnel Only',
+                  'Authenticated via Supabase Auth • Zero-Trust EMS Security\nAuthorized Emergency Personnel Only',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 12,
