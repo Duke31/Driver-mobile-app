@@ -29,10 +29,12 @@ jobs:
         run: |
           flutter create --platforms=android --project-name ambulance_driver_app --org com.ogbomoso .
 
-      - name: Configure Android Permissions & Hardware Flags
+      - name: Configure Android Permissions & Desugaring Support
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          
+          # 1. Update AndroidManifest.xml permissions
           p = Path("android/app/src/main/AndroidManifest.xml")
           if p.exists():
               text = p.read_text()
@@ -54,14 +56,23 @@ jobs:
                   idx = text.find(">")
                   new_text = text[:idx+1] + "\n    " + "\n    ".join(to_add) + text[idx+1:]
                   p.write_text(new_text)
-                  print("Added permissions successfully.")
+
+          # 2. Configure coreLibraryDesugaring in android/app/build.gradle if present
+          gradle_path = Path("android/app/build.gradle")
+          if gradle_path.exists():
+              gtext = gradle_path.read_text()
+              if "coreLibraryDesugaringEnabled" not in gtext:
+                  if "compileOptions {" in gtext:
+                      gtext = gtext.replace("compileOptions {", "compileOptions {\n        coreLibraryDesugaringEnabled true")
+                      gtext += "\ndependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'\n}\n"
+                      gradle_path.write_text(gtext)
           PY
 
       - name: Install Flutter Dependencies
         run: flutter pub get
 
       - name: Build Release APK
-        run: flutter build apk --release
+        run: flutter build apk --release --no-tree-shake-icons
 
       - name: Upload Driver APK to GitHub Actions
         uses: actions/upload-artifact@v4
