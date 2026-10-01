@@ -168,11 +168,13 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
 
     dynamic activeRecord;
 
+    bool rpcSucceeded = false;
     // Strategy 1: Call RPC
     try {
       final rpcRes = await Supabase.instance.client.rpc('get_driver_active_mission', params: {
         'p_driver_id': widget.driver.id,
       });
+      rpcSucceeded = true;
       if (rpcRes != null) {
         activeRecord = rpcRes;
       }
@@ -180,14 +182,14 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
       debugPrint('RPC get_driver_active_mission notice: $rpcErr');
     }
 
-    // Strategy 2: Fallback to direct query if RPC returned null or was unavailable
-    if (activeRecord == null) {
+    // Strategy 2: Fallback to direct query ONLY if RPC itself threw an error
+    if (!rpcSucceeded && activeRecord == null) {
       try {
         final queryRes = await Supabase.instance.client
             .from('emergency_requests')
             .select('*, hospitals:hospitals(*)')
             .eq('driver_id', widget.driver.id)
-            .not('status', 'in', '("Completed","Cancelled / failed","completed","cancelled")')
+            .not('status', 'in', '("Completed","Cancelled / failed")')
             .order('created_at', ascending: false)
             .limit(1)
             .maybeSingle();
@@ -209,6 +211,8 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
         } else {
           // If no active run exists in database, cleanly clear mission from screen
           _activeMission = null;
+          // Standby is a clean, normal state, not an error!
+          _activeFetchError = null;
         }
         _isLoadingActive = false;
       });
@@ -220,10 +224,12 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
     _availableFetchError = null;
 
     List<dynamic> listData = [];
+    bool rpcSucceeded = false;
 
     // Strategy 1: Call RPC
     try {
       final res = await Supabase.instance.client.rpc('get_available_emergency_jobs');
+      rpcSucceeded = true;
       if (res is List && res.isNotEmpty) {
         listData = res;
       }
@@ -231,14 +237,14 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
       debugPrint('RPC get_available_emergency_jobs notice: $rpcErr');
     }
 
-    // Strategy 2: Fallback to direct query for unassigned dispatches
-    if (listData.isEmpty) {
+    // Strategy 2: Fallback to direct query only if RPC failed and returned no data
+    if (!rpcSucceeded && listData.isEmpty) {
       try {
         final queryRes = await Supabase.instance.client
             .from('emergency_requests')
             .select('*, hospitals:hospitals(*)')
             .isFilter('driver_id', null)
-            .not('status', 'in', '("Completed","Cancelled / failed","completed","cancelled")')
+            .not('status', 'in', '("Completed","Cancelled / failed")')
             .order('created_at', ascending: false)
             .limit(20);
 
@@ -284,13 +290,13 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
             .from('emergency_requests')
             .select('*, hospitals:hospitals(*)')
             .eq('driver_id', widget.driver.id)
-            .inFilter('status', ['Completed', 'Cancelled / failed', 'completed', 'cancelled'])
+            .inFilter('status', ['Completed', 'Cancelled / failed'])
             .order('created_at', ascending: false)
             .limit(30);
       }
 
       if (mounted) {
-        final list = (res as List)
+        final list = (res is List ? res : [])
             .map((item) => EmergencyRequestModel.fromJson(Map<String, dynamic>.from(item as Map)))
             .toList();
         setState(() {
