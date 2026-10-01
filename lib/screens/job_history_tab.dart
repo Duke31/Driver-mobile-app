@@ -104,17 +104,17 @@ class JobHistoryTab extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.between,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Colors.emerald.withOpacity(0.15),
+                        color: const Color(0xFF10B981).withOpacity(0.15),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: const Row(
                         children: [
-                          Icon(Icons.check_circle_rounded, color: Colors.emeraldAccent, size: 14),
+                          Icon(Icons.check_circle_rounded, color: Color(0xFF34D399), size: 14),
                           SizedBox(width: 4),
                           Text(
                             'COMPLETED RUN',
@@ -122,7 +122,7 @@ class JobHistoryTab extends StatelessWidget {
                               fontSize: 10,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 0.5,
-                              color: Colors.emeraldAccent,
+                              color: Color(0xFF34D399),
                             ),
                           ),
                         ],

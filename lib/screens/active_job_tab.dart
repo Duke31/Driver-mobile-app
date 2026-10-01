@@ -100,13 +100,13 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
               Container(
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  color: Colors.emerald.withOpacity(0.12),
+                  color: const Color(0xFF10B981).withOpacity(0.12),
                   shape: BoxShape.circle,
-                  border: Border.all(color: Colors.emerald.withOpacity(0.3), width: 2),
+                  border: Border.all(color: const Color(0xFF10B981).withOpacity(0.3), width: 2),
                 ),
                 child: const Icon(
                   Icons.check_circle_outline_rounded,
-                  color: Colors.emeraldAccent,
+                  color: Color(0xFF34D399),
                   size: 64,
                 ),
               ),
@@ -192,7 +192,7 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.between,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -477,7 +477,7 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.between,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text(
                         'RECEIVING HOSPITAL DESTINATION',
@@ -641,7 +641,7 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
                 icon: const Icon(Icons.task_alt_rounded),
                 label: const Text('5. COMPLETE MISSION & STAND BY'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.emerald.shade700,
+                  backgroundColor: const Color(0xFF047857),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

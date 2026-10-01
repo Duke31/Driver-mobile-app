@@ -247,7 +247,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
                       width: 7,
                       height: 7,
                       decoration: BoxDecoration(
-                        color: status.contains('Transmitting') ? Colors.emeraldAccent : Colors.amberAccent,
+                        color: status.contains('Transmitting') ? const Color(0xFF34D399) : Colors.amberAccent,
                         shape: BoxShape.circle,
                       ),
                     ),
