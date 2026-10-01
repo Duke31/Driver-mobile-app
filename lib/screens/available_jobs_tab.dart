@@ -33,11 +33,25 @@ class _AvailableJobsTabState extends State<AvailableJobsTab> {
     });
 
     try {
-      final res = await Supabase.instance.client.rpc('accept_emergency_mission', params: {
-        'p_request_id': job.id,
-      });
+      // 1. Try accept_emergency_mission RPC
+      bool accepted = false;
+      try {
+        final res = await Supabase.instance.client.rpc('accept_emergency_mission', params: {
+          'p_request_id': job.id,
+        });
+        debugPrint('Mission accepted: $res');
+        accepted = true;
+      } catch (_) {}
 
-      debugPrint('Mission accepted: $res');
+      // 2. If not accepted yet, try driver_advance_milestone RPC
+      if (!accepted) {
+        final res2 = await Supabase.instance.client.rpc('driver_advance_milestone', params: {
+          'p_request_id': job.id,
+          'p_next_status': 'Driver assigned',
+        });
+        debugPrint('Mission accepted via milestone advance: $res2');
+      }
+
       widget.onMissionAccepted(job);
     } catch (e) {
       String clean = e.toString();

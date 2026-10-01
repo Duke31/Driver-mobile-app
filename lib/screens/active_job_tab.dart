@@ -41,17 +41,61 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
       _statusError = null;
     });
 
+    final reqId = widget.activeMission!.id;
+
     try {
-      final res = await Supabase.instance.client.rpc('transition_emergency_state', params: {
-        'request_id': widget.activeMission!.id,
-        'new_state': nextStatus,
-        'actor_role': 'driver',
-      });
-      debugPrint('Transition success: $res');
+      // 1. Try driver_advance_milestone RPC first (trigger-safe)
+      bool succeeded = false;
+      try {
+        await Supabase.instance.client.rpc('driver_advance_milestone', params: {
+          'p_request_id': reqId,
+          'p_next_status': nextStatus,
+        });
+        succeeded = true;
+      } catch (_) {}
+
+      if (!succeeded) {
+        // 2. Try standard transition_emergency_state
+        try {
+          await Supabase.instance.client.rpc('transition_emergency_state', params: {
+            'request_id': reqId,
+            'new_state': nextStatus,
+            'actor_role': 'driver',
+          });
+          succeeded = true;
+        } catch (transErr) {
+          // If starting from Hospital confirmed, transition to Driver assigned then En route to patient
+          if (nextStatus == 'En route to patient') {
+            try {
+              await Supabase.instance.client.rpc('transition_emergency_state', params: {
+                'request_id': reqId,
+                'new_state': 'Driver assigned',
+                'actor_role': 'driver',
+              });
+              await Supabase.instance.client.rpc('transition_emergency_state', params: {
+                'request_id': reqId,
+                'new_state': nextStatus,
+                'actor_role': 'driver',
+              });
+              succeeded = true;
+            } catch (_) {
+              throw transErr;
+            }
+          } else {
+            throw transErr;
+          }
+        }
+      }
+
+      debugPrint('Milestone transition succeeded: $nextStatus');
       widget.onRefresh();
     } catch (e) {
+      String clean = e.toString();
+      if (clean.contains('Exception:')) {
+        clean = clean.split('Exception:').last.trim();
+      }
       setState(() {
-        _statusError = 'Milestone update failed: $e';
+        _statusError = 'Milestone transition error: $clean';
       });
     } finally {
       if (mounted) {
@@ -764,7 +808,9 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
       );
     }
 
-    if (currentStatus == 'Driver assigned') {
+    final s = currentStatus.toLowerCase().trim();
+
+    if (s == 'hospital confirmed' || s == 'driver assigned' || s == 'requested' || s == 'matching' || s == 'assigned') {
       return ElevatedButton(
         onPressed: () => _executeTransition('En route to patient'),
         style: ElevatedButton.styleFrom(
@@ -780,13 +826,13 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
             Icon(Icons.directions_car_filled_rounded, size: 24),
             SizedBox(width: 10),
             Text(
-              'EN ROUTE TO PATIENT',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: 0.8),
+              '1. START RUN: EN ROUTE TO PATIENT',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, letterSpacing: 0.8),
             ),
           ],
         ),
       );
-    } else if (currentStatus == 'En route to patient') {
+    } else if (s == 'en route to patient') {
       return ElevatedButton(
         onPressed: () => _executeTransition('Patient picked up'),
         style: ElevatedButton.styleFrom(
@@ -802,13 +848,13 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
             Icon(Icons.airline_seat_flat_rounded, size: 24),
             SizedBox(width: 10),
             Text(
-              'PATIENT PICKED UP / ON BOARD',
+              '2. PATIENT PICKED UP / ON BOARD',
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, letterSpacing: 0.8),
             ),
           ],
         ),
       );
-    } else if (currentStatus == 'Patient picked up') {
+    } else if (s == 'patient picked up') {
       return ElevatedButton(
         onPressed: () => _executeTransition('En route to hospital'),
         style: ElevatedButton.styleFrom(
@@ -824,13 +870,13 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
             Icon(Icons.local_hospital_rounded, size: 24),
             SizedBox(width: 10),
             Text(
-              'EN ROUTE TO HOSPITAL',
+              '3. EN ROUTE TO HOSPITAL',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: 0.8),
             ),
           ],
         ),
       );
-    } else if (currentStatus == 'En route to hospital') {
+    } else if (s == 'en route to hospital') {
       return ElevatedButton(
         onPressed: () => _executeTransition('Arrived / intake'),
         style: ElevatedButton.styleFrom(
@@ -846,8 +892,33 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
             Icon(Icons.how_to_reg_rounded, size: 24),
             SizedBox(width: 10),
             Text(
-              'ARRIVED AT ER / INTAKE HANDOVER',
+              '4. ARRIVED AT ER / INTAKE HANDOVER',
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, letterSpacing: 0.8),
+            ),
+          ],
+        ),
+      );
+    } else if (s == 'arrived / intake') {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF10B981).withOpacity(0.12),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFF10B981).withOpacity(0.3)),
+        ),
+        child: const Column(
+          children: [
+            Icon(Icons.check_circle_rounded, color: Color(0xFF34D399), size: 36),
+            SizedBox(height: 8),
+            Text(
+              'Handover Complete at ER Triage',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            SizedBox(height: 4),
+            Text(
+              'Hospital staff is completing clinical intake and bed assignment. Your ambulance unit is clearing.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white70, fontSize: 12),
             ),
           ],
         ),
