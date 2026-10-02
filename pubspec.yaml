@@ -20,7 +20,7 @@ dependencies:
   wakelock_plus: ^1.2.8
 
   # Hardware Telemetry (Battery & Connectivity)
-  battery_plus: ^6.1.1
+  battery_plus: ^6.2.1
   connectivity_plus: ^6.1.0
 
   # Persistent Session Storage

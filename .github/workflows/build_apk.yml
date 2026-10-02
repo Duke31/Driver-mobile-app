@@ -58,15 +58,41 @@ jobs:
                   new_text = text[:idx+1] + "\n    " + "\n    ".join(to_add) + text[idx+1:]
                   p.write_text(new_text)
 
-          # 2. Configure coreLibraryDesugaring in android/app/build.gradle if present
-          gradle_path = Path("android/app/build.gradle")
-          if gradle_path.exists():
-              gtext = gradle_path.read_text()
+          # 2. Configure coreLibraryDesugaring in android/app/build.gradle.kts and/or build.gradle
+          kts_path = Path("android/app/build.gradle.kts")
+          groovy_path = Path("android/app/build.gradle")
+
+          if kts_path.exists():
+              ktext = kts_path.read_text()
+              if "isCoreLibraryDesugaringEnabled" not in ktext and "coreLibraryDesugaring" not in ktext:
+                  if "compileOptions {" in ktext:
+                      ktext = ktext.replace("compileOptions {", "compileOptions {\n        isCoreLibraryDesugaringEnabled = true")
+                  if "dependencies {" in ktext:
+                      ktext = ktext.replace("dependencies {", "dependencies {\n    coreLibraryDesugaring(\"com.android.tools:desugar_jdk_libs:2.1.4\")")
+                  else:
+                      ktext += "\ndependencies {\n    coreLibraryDesugaring(\"com.android.tools:desugar_jdk_libs:2.1.4\")\n}\n"
+                  kts_path.write_text(ktext)
+                  print("SUCCESS: Enabled desugaring in build.gradle.kts")
+
+          if groovy_path.exists():
+              gtext = groovy_path.read_text()
               if "coreLibraryDesugaringEnabled" not in gtext:
                   if "compileOptions {" in gtext:
                       gtext = gtext.replace("compileOptions {", "compileOptions {\n        coreLibraryDesugaringEnabled true")
-                      gtext += "\ndependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'\n}\n"
-                      gradle_path.write_text(gtext)
+                  if "dependencies {" in gtext:
+                      gtext = gtext.replace("dependencies {", "dependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'")
+                  else:
+                      gtext += "\ndependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'\n}\n"
+                  groovy_path.write_text(gtext)
+                  print("SUCCESS: Enabled desugaring in build.gradle")
+
+          # 3. Ensure a valid placeholder google-services.json exists for CI build if not present
+          gs_example = Path("android/app/google-services.json.example")
+          gs_target = Path("android/app/google-services.json")
+          if gs_example.exists() and not gs_target.exists():
+              import shutil
+              shutil.copy(gs_example, gs_target)
+              print("Copied google-services.json placeholder for build")
           PY
 
       - name: Install Flutter Dependencies
