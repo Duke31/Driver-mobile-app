@@ -40,6 +40,7 @@ class DriverModel {
   });
 
   bool get isOnDuty => dutyStatus == 'on_duty' && active;
+  String? get contactPhone => phone;
 
   DriverModel copyWith({
     bool? active,

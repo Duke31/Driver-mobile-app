@@ -622,7 +622,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
               overflow: TextOverflow.ellipsis,
             ),
             Text(
-              '${widget.driver.vehicleLabel ?? "Ambulance Unit"} • ${widget.driver.contactPhone ?? ""}',
+              '${widget.driver.vehicleLabel ?? "Ambulance Unit"} • ${widget.driver.phone ?? ""}',
               style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
               overflow: TextOverflow.ellipsis,
             ),
