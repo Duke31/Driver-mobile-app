@@ -295,12 +295,56 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
   Future<void> _fetchJobHistory() async {
     setState(() => _isLoadingHistory = true);
     try {
-      final res = await Supabase.instance.client
-          .from('emergency_requests')
-          .select('*, hospitals:hospitals(*)')
-          .eq('driver_id', widget.driver.id)
-          .order('created_at', ascending: false)
-          .limit(50);
+      dynamic res;
+      final driverId = widget.driver.id;
+      final userId = widget.driver.userId;
+
+      // Strategy 1: Joined query with hospitals
+      try {
+        if (userId != null && userId.isNotEmpty && userId != driverId) {
+          res = await Supabase.instance.client
+              .from('emergency_requests')
+              .select('*, hospitals(*)')
+              .or('driver_id.eq.$driverId,driver_id.eq.$userId')
+              .order('created_at', ascending: false)
+              .limit(50);
+        } else {
+          res = await Supabase.instance.client
+              .from('emergency_requests')
+              .select('*, hospitals(*)')
+              .eq('driver_id', driverId)
+              .order('created_at', ascending: false)
+              .limit(50);
+        }
+      } catch (e1) {
+        debugPrint('Joined history query note: $e1');
+        // Strategy 2: Plain select without relationship join
+        try {
+          if (userId != null && userId.isNotEmpty && userId != driverId) {
+            res = await Supabase.instance.client
+                .from('emergency_requests')
+                .select('*')
+                .or('driver_id.eq.$driverId,driver_id.eq.$userId')
+                .order('created_at', ascending: false)
+                .limit(50);
+          } else {
+            res = await Supabase.instance.client
+                .from('emergency_requests')
+                .select('*')
+                .eq('driver_id', driverId)
+                .order('created_at', ascending: false)
+                .limit(50);
+          }
+        } catch (e2) {
+          debugPrint('Plain history query note: $e2');
+          res = await Supabase.instance.client
+              .from('emergency_requests')
+              .select('*')
+              .eq('driver_id', driverId)
+              .order('created_at', ascending: false)
+              .limit(50);
+        }
+      }
 
       if (mounted) {
         final List<EmergencyRequestModel> items = [];

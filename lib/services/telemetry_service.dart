@@ -114,12 +114,27 @@ class TelemetryService {
       debugPrint('Error getting initial position: $e');
     }
 
-    // 6. Stream continuous location updates
+    // 6. Stream continuous location updates with Android Foreground Service keep-alive
     await _positionSubscription?.cancel();
-    const locationSettings = LocationSettings(
-      accuracy: LocationAccuracy.bestForNavigation,
-      distanceFilter: 5, // update every 5 meters
-    );
+    late final LocationSettings locationSettings;
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      locationSettings = AndroidSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 5,
+        forceLocationManager: false,
+        intervalDuration: const Duration(seconds: 4),
+        foregroundNotificationConfig: const ForegroundNotificationConfig(
+          notificationText: 'Continuous ambulance GPS telemetry & priority emergency dispatch link active.',
+          notificationTitle: '🚑 Ambulance Dispatch Telemetry Online',
+          enableWakeLock: true,
+        ),
+      );
+    } else {
+      locationSettings = const LocationSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 5,
+      );
+    }
 
     _positionSubscription = Geolocator.getPositionStream(
       locationSettings: locationSettings,
