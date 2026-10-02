@@ -23,10 +23,10 @@ class AudioAlarmService {
           ),
           iOS: AudioContextIOS(
             category: AVAudioSessionCategory.playback,
-            options: [
+            options: {
               AVAudioSessionOptions.duckOthers,
               AVAudioSessionOptions.defaultToSpeaker,
-            ],
+            },
           ),
         ),
       );
