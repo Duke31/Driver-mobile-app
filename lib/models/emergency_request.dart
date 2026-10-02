@@ -89,11 +89,25 @@ class EmergencyRequestModel {
       patientAgeBand: json['patient_age_band'] as String?,
       priority: json['priority']?.toString(),
       hospital: _parseHospital(rawHospital),
-      tacticalAlert: json['tactical_alert'] as String?,
+      tacticalAlert: (json['tactical_alert'] as String?) ?? () {
+        final n = json['notes'] as String?;
+        if (n == null) return null;
+        final match = RegExp(r'\[TACTICAL (?:RADIO|ALERT)[^\]]*\]:\s*([^\n\r]+)', caseSensitive: false).firstMatch(n);
+        return match?.group(1)?.trim();
+      }(),
       tacticalAlertCode: json['tactical_alert_code'] as String?,
       tacticalAlertAt: json['tactical_alert_at'] as String?,
-      tacticalAlertAck: json['tactical_alert_ack'] as bool?,
-      dispatcherResponse: json['dispatcher_response'] as String?,
+      tacticalAlertAck: (json['tactical_alert_ack'] as bool?) ?? () {
+        final n = json['notes'] as String?;
+        if (n == null) return false;
+        return n.toLowerCase().contains('[dispatch');
+      }(),
+      dispatcherResponse: (json['dispatcher_response'] as String?) ?? () {
+        final n = json['notes'] as String?;
+        if (n == null) return null;
+        final match = RegExp(r'\[DISPATCH (?:RADIO|ACK)[^\]]*\]:\s*([^\n\r]+)', caseSensitive: false).firstMatch(n);
+        return match?.group(1)?.trim();
+      }(),
       dispatcherResponseAt: json['dispatcher_response_at'] as String?,
     );
   }

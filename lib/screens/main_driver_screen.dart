@@ -45,6 +45,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
     _startTelemetry();
     _fetchActiveMission();
     _fetchAvailableJobs();
+    _fetchJobHistory();
     _setupRealtimeDispatchChannel();
 
     // Listen for proactive background emergency detection from TelemetryService
@@ -298,15 +299,28 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
           .from('emergency_requests')
           .select('*, hospitals:hospitals(*)')
           .eq('driver_id', widget.driver.id)
-          .inFilter('status', ['Completed', 'completed', 'Cancelled / failed', 'cancelled'])
           .order('created_at', ascending: false)
-          .limit(30);
+          .limit(50);
 
       if (mounted) {
+        final List<EmergencyRequestModel> items = [];
+        for (final item in (res as List)) {
+          final model = EmergencyRequestModel.fromJson(Map<String, dynamic>.from(item as Map));
+          final st = model.status.toLowerCase().trim();
+          final isCurrentlyActive = st == 'driver assigned' ||
+              st == 'en route to patient' ||
+              st == 'patient picked up' ||
+              st == 'en route to hospital' ||
+              st == 'matching' ||
+              st == 'requested';
+
+          if (!isCurrentlyActive) {
+            items.add(model);
+          }
+        }
+
         setState(() {
-          _jobHistory = (res as List)
-              .map((item) => EmergencyRequestModel.fromJson(Map<String, dynamic>.from(item as Map)))
-              .toList();
+          _jobHistory = items;
           _isLoadingHistory = false;
         });
       }

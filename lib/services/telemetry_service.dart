@@ -192,14 +192,26 @@ class TelemetryService {
     if (currentDriverId == null) return;
 
     try {
-      final active = await Supabase.instance.client
+      final List<dynamic> list = await Supabase.instance.client
           .from('emergency_requests')
-          .select('id, emergency_type, location_address, priority, status, contact_phone, patient_name')
+          .select('id, emergency_type, location_address, priority, status, contact_phone, patient_name, notes, created_at')
           .eq('driver_id', currentDriverId!)
-          .not('status', 'in', '("Completed","Cancelled / failed","cancelled","completed","Declined")')
           .order('created_at', ascending: false)
-          .limit(1)
-          .maybeSingle();
+          .limit(10);
+
+      Map<String, dynamic>? active;
+      for (final item in list) {
+        final st = (item['status'] ?? '').toString().toLowerCase().trim();
+        final isFinished = st == 'completed' ||
+            st.contains('cancel') ||
+            st.contains('abort') ||
+            st.contains('fail') ||
+            st == 'declined';
+        if (!isFinished) {
+          active = Map<String, dynamic>.from(item as Map);
+          break;
+        }
+      }
 
       if (active != null) {
         final reqId = active['id']?.toString();
