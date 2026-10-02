@@ -1,5 +1,6 @@
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 class AudioAlarmService {
   static final AudioAlarmService _instance = AudioAlarmService._internal();
@@ -38,8 +39,9 @@ class AudioAlarmService {
 
   Future<void> playDispatchAlarm() async {
     try {
+      HapticFeedback.heavyImpact();
       await _configureAudioContext();
-      await _player.setReleaseMode(ReleaseMode.stop);
+      await _player.setReleaseMode(ReleaseMode.loop);
       await _player.setVolume(1.0);
       await _player.play(UrlSource('https://cdn.freesound.org/previews/250/250629_4486188-lq.mp3'));
     } catch (e) {

@@ -205,27 +205,34 @@ class TelemetryService {
   /// and loudly triggers siren + high-priority wake notification.
   Future<void> _checkForAssignedEmergencies() async {
     if (currentDriverId == null) return;
-
     try {
-      final List<dynamic> list = await Supabase.instance.client
-          .from('emergency_requests')
-          .select('id, emergency_type, location_address, priority, status, contact_phone, patient_name, notes, created_at')
-          .eq('driver_id', currentDriverId!)
-          .order('created_at', ascending: false)
-          .limit(10);
-
       Map<String, dynamic>? active;
-      for (final item in list) {
-        final st = (item['status'] ?? '').toString().toLowerCase().trim();
-        final isFinished = st == 'completed' ||
-            st.contains('cancel') ||
-            st.contains('abort') ||
-            st.contains('fail') ||
-            st == 'declined';
-        if (!isFinished) {
-          active = Map<String, dynamic>.from(item as Map);
-          break;
+
+      // Strategy 1: RPC get_driver_active_mission
+      try {
+        final rpcRes = await Supabase.instance.client.rpc('get_driver_active_mission', params: {
+          'p_driver_id': currentDriverId!,
+        });
+        if (rpcRes != null && rpcRes is Map) {
+          active = Map<String, dynamic>.from(rpcRes);
         }
+      } catch (_) {}
+
+      // Strategy 2: Direct resilient query with correct column names
+      if (active == null) {
+        try {
+          final List<dynamic> list = await Supabase.instance.client
+              .from('emergency_requests')
+              .select('id, emergency_type, patient_address, priority, status, contact_phone, notes, created_at, hospital_id')
+              .eq('driver_id', currentDriverId!)
+              .not('status', 'in', '("Completed","Cancelled / failed","cancelled","completed")')
+              .order('created_at', ascending: false)
+              .limit(1);
+
+          if (list.isNotEmpty && list.first is Map) {
+            active = Map<String, dynamic>.from(list.first as Map);
+          }
+        } catch (_) {}
       }
 
       if (active != null) {
@@ -242,9 +249,8 @@ class TelemetryService {
         // Check if this mission has already been alerted to the driver
         if (reqId != null && _lastAlertedMissionId != reqId) {
           _lastAlertedMissionId = reqId;
-
           final type = active['emergency_type']?.toString() ?? 'Emergency Run';
-          final address = active['location_address']?.toString() ?? 'Location dispatched';
+          final address = active['patient_address']?.toString() ?? 'Emergency Location';
           final priority = active['priority']?.toString() ?? 'URGENT';
 
           // 1. Play loud siren alarm
@@ -252,15 +258,15 @@ class TelemetryService {
 
           // 2. Trigger High-Priority Lock-Screen Wake Notification
           await _fcm.showEmergencyDispatchAlert(
-            title: '🚨 PRIORITY $priority DISPATCH ASSIGNED!',
-            body: '$type: $address. Tap to open mission console.',
+            title: '🚨 PRIORITY ' + priority + ' DISPATCH ASSIGNED!',
+            body: type + ': ' + address + '. Tap to open mission console.',
             payload: reqId,
           );
 
           // 3. Update sticky foreground notification to indicate live mission
           await _fcm.showPersistentDutyNotification(
             driverName: currentDriverName ?? 'Ambulance Unit',
-            vehicleLabel: '🚨 ACTIVE MISSION: $type',
+            vehicleLabel: '🚨 ACTIVE MISSION: ' + type,
           );
 
           // 4. Notify UI if mounted
@@ -272,6 +278,7 @@ class TelemetryService {
           hasActiveMission = false;
           activeMissionId = null;
           _lastAlertedMissionId = null;
+
           // Restore standard persistent duty notification
           if (isOnDuty) {
             await _fcm.showPersistentDutyNotification(

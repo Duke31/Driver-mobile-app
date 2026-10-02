@@ -1,3 +1,5 @@
+import 'package:flutter/services.dart';
+import '../services/fcm_notification_service.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -23,6 +25,8 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
   int _currentTabIndex = 0;
   final TelemetryService _telemetry = TelemetryService();
   final AudioAlarmService _audio = AudioAlarmService();
+  final FcmNotificationService _fcm = FcmNotificationService();
+  Timer? _missionPollTimer;
 
   EmergencyRequestModel? _activeMission;
   List<EmergencyRequestModel> _availableJobs = [];
@@ -48,17 +52,33 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
     _fetchJobHistory();
     _setupRealtimeDispatchChannel();
 
+    // Fast polling fallback (every 3 seconds) ensuring instant assignment detection
+    _missionPollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (mounted) {
+        _fetchActiveMission(silent: true);
+      }
+    });
+
     // Listen for proactive background emergency detection from TelemetryService
     _telemetry.onEmergencyAssigned = (missionMap) {
       if (mounted) {
         try {
           final mission = EmergencyRequestModel.fromJson(missionMap);
+          final bool isNew = _activeMission == null || _activeMission!.id != mission.id;
           setState(() {
             _activeMission = mission;
             _currentTabIndex = 0; // Focus directly on Active Mission
             _incomingAlertMessage = '🚨 EMERGENCY DISPATCH: ${mission.emergencyType ?? "Priority Run"} assigned to your unit!';
           });
           _telemetry.setActiveMissionState(mission.id);
+          if (isNew) {
+            _triggerAlarm(
+              '🚨 DISPATCH: Emergency run assigned to your unit!',
+              requestId: mission.id,
+              address: mission.patientAddress,
+              type: mission.emergencyType,
+            );
+          }
         } catch (e) {
           debugPrint('Error parsing assigned mission from background telemetry: $e');
         }
@@ -68,6 +88,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
 
   @override
   void dispose() {
+    _missionPollTimer?.cancel();
     _subscription?.unsubscribe();
     _audio.stopAlarm();
     super.dispose();
@@ -131,6 +152,8 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
                 return;
               }
 
+              final bool isNewAssignment = _activeMission == null || _activeMission!.id != recordId;
+
               // Active run assigned to this driver
               try {
                 final fastModel = EmergencyRequestModel.fromJson(Map<String, dynamic>.from(record));
@@ -146,8 +169,13 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
               }
 
               _fetchActiveMission(silent: true);
-              if (!_isAudioMuted && (payload.eventType == PostgresChangeEvent.insert || reqStatus == 'Driver assigned')) {
-                _triggerAlarm('🚨 DISPATCH: You have been assigned an emergency run!');
+              if (isNewAssignment) {
+                _triggerAlarm(
+                  '🚨 DISPATCH: You have been assigned an emergency run!',
+                  requestId: recordId,
+                  address: record['patient_address']?.toString(),
+                  type: record['emergency_type']?.toString(),
+                );
               }
             } else if (_activeMission?.id == recordId && driverId != widget.driver.id) {
               // Reassigned away to another driver
@@ -167,11 +195,34 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
             }
           },
         )
+        .onBroadcast(
+          event: 'emergency_assigned',
+          callback: (payload) {
+            debugPrint('Direct broadcast emergency_assigned received: $payload');
+            _fetchActiveMission(silent: true);
+            _triggerAlarm(
+              '🚨 DISPATCH: New emergency assigned by dispatcher!',
+              requestId: payload['request_id']?.toString(),
+              address: payload['patient_address']?.toString(),
+              type: payload['emergency_type']?.toString(),
+            );
+          },
+        )
         .subscribe();
   }
 
-  void _triggerAlarm(String message) {
-    _audio.playDispatchAlarm();
+  void _triggerAlarm(String message, {String? requestId, String? address, String? type}) {
+    HapticFeedback.heavyImpact();
+    if (!_isAudioMuted) {
+      _audio.playDispatchAlarm();
+    }
+    _fcm.showEmergencyDispatchAlert(
+      title: '🚨 EMERGENCY DISPATCH ASSIGNED!',
+      body: address != null && address.isNotEmpty
+          ? '${type ?? "Emergency Run"}: $address. Respond immediately.'
+          : message,
+      payload: requestId,
+    );
     if (mounted) {
       setState(() {
         _incomingAlertMessage = message;
@@ -230,11 +281,24 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
     }
 
     if (mounted) {
+      final previousMissionId = _activeMission?.id;
       setState(() {
         if (activeRecord != null) {
-          _activeMission = EmergencyRequestModel.fromJson(Map<String, dynamic>.from(activeRecord as Map));
+          final newMission = EmergencyRequestModel.fromJson(Map<String, dynamic>.from(activeRecord as Map));
+          _activeMission = newMission;
           _activeFetchError = null;
-          _telemetry.setActiveMissionState(_activeMission!.id);
+          _telemetry.setActiveMissionState(newMission.id);
+
+          // If a new emergency has been assigned, trigger siren and notification immediately!
+          if (previousMissionId != newMission.id) {
+            _currentTabIndex = 0;
+            _triggerAlarm(
+              '🚨 DISPATCH: Emergency assigned to your unit!',
+              requestId: newMission.id,
+              address: newMission.patientAddress,
+              type: newMission.emergencyType,
+            );
+          }
         } else {
           // If no active run exists in database, cleanly clear mission from screen
           _activeMission = null;
