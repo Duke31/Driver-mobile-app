@@ -883,6 +883,8 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
                     ),
                   ],
                 ),
+              ),
+
             // 2-WAY DISPATCH RADIO & CANNED TACTICAL ALERTS PANEL
             _buildTacticalRadioPanel(mission),
             const SizedBox(height: 18),
