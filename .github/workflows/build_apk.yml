@@ -50,6 +50,7 @@ jobs:
                   '<uses-permission android:name="android.permission.BATTERY_STATS"/>',
                   '<uses-permission android:name="android.permission.CALL_PHONE"/>',
                   '<uses-permission android:name="android.permission.VIBRATE"/>',
+                  '<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>',
               ]
               to_add = [perm for perm in permissions if perm not in text]
               if to_add:

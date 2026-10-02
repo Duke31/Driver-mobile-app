@@ -8,6 +8,8 @@ class DriverModel {
   final String? phone;
   final bool active;
   final String? status;
+  final String? dutyStatus;
+  final String? fcmToken;
   final double? currentLat;
   final double? currentLng;
   final double? heading;
@@ -26,6 +28,8 @@ class DriverModel {
     this.phone,
     this.active = true,
     this.status,
+    this.dutyStatus = 'on_duty',
+    this.fcmToken,
     this.currentLat,
     this.currentLng,
     this.heading,
@@ -34,6 +38,35 @@ class DriverModel {
     this.isCharging,
     this.networkType,
   });
+
+  bool get isOnDuty => dutyStatus == 'on_duty' && active;
+
+  DriverModel copyWith({
+    bool? active,
+    String? dutyStatus,
+    String? fcmToken,
+  }) {
+    return DriverModel(
+      id: id,
+      userId: userId,
+      displayName: displayName,
+      vehicleLabel: vehicleLabel,
+      hospitalId: hospitalId,
+      hospitalName: hospitalName,
+      phone: phone,
+      active: active ?? this.active,
+      status: status,
+      dutyStatus: dutyStatus ?? this.dutyStatus,
+      fcmToken: fcmToken ?? this.fcmToken,
+      currentLat: currentLat,
+      currentLng: currentLng,
+      heading: heading,
+      speed: speed,
+      batteryLevel: batteryLevel,
+      isCharging: isCharging,
+      networkType: networkType,
+    );
+  }
 
   factory DriverModel.fromJson(Map<String, dynamic> json) {
     return DriverModel(
@@ -46,6 +79,8 @@ class DriverModel {
       phone: json['phone'] as String?,
       active: (json['active'] as bool?) ?? true,
       status: json['status'] as String?,
+      dutyStatus: (json['duty_status'] as String?) ?? ((json['active'] == false) ? 'off_duty' : 'on_duty'),
+      fcmToken: json['fcm_token'] as String?,
       currentLat: (json['current_lat'] as num?)?.toDouble(),
       currentLng: (json['current_lng'] as num?)?.toDouble(),
       heading: (json['heading'] as num?)?.toDouble(),

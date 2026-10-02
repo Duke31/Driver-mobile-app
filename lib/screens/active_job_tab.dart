@@ -29,8 +29,10 @@ class ActiveJobTab extends StatefulWidget {
 
 class _ActiveJobTabState extends State<ActiveJobTab> {
   bool _isActionBusy = false;
+  bool _isSendingAlert = false;
   String? _statusError;
   String? _optimisticStatus;
+  String? _lastSentAlert;
   bool _showTacticalMap = true;
   bool _isMapFullscreen = false;
 
@@ -41,6 +43,58 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
       _optimisticStatus = null;
     }
   }
+
+  Future<void> _sendTacticalAlert(String code, String alertMessage) async {
+    if (widget.activeMission == null) return;
+    final reqId = widget.activeMission!.id;
+
+    setState(() {
+      _isSendingAlert = true;
+      _lastSentAlert = alertMessage;
+    });
+
+    try {
+      await Supabase.instance.client.rpc('send_driver_tactical_alert', params: {
+        'p_request_id': reqId,
+        'p_alert_code': code,
+        'p_alert_message': alertMessage,
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.radio_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'TACTICAL RADIO: "$alertMessage" transmitted to dispatch console!',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.amber.shade900,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+      widget.onRefresh();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to transmit radio alert: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSendingAlert = false);
+    }
+  }
+
 
   Future<void> _executeTransition(String nextStatus) async {
     if (widget.activeMission == null) return;
@@ -518,11 +572,18 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
                   ],
                   const SizedBox(height: 14),
 
-                  // Navigation Action Buttons (Glove-Friendly & Fluid)
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
+                  // Turn-by-Turn Offline Google Navigation & Navigation Intents
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0F172A).withOpacity(0.8),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.white12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        ElevatedButton.icon(
                           onPressed: () {
                             if (isHeadingToHospital) {
                               _launchMaps(
@@ -540,45 +601,83 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
                               );
                             }
                           },
-                          icon: const Icon(Icons.navigation_rounded, size: 20),
-                          label: Text(
-                            isHeadingToHospital ? 'Navigate to Hospital' : 'Navigate to Patient',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          icon: const Icon(Icons.navigation_rounded, size: 22),
+                          label: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                isHeadingToHospital ? '1-TAP NAVIGATE TO HOSPITAL' : '1-TAP NAVIGATE TO PATIENT',
+                                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 0.5),
+                              ),
+                              const Text(
+                                'Google Navigation Intent • Offline Caching & Voice Guidance',
+                                style: TextStyle(fontSize: 10, fontWeight: FontWeight.normal, color: Colors.white70),
+                              ),
+                            ],
                           ),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: isHeadingToHospital ? Colors.blueAccent : Colors.redAccent,
+                            backgroundColor: isHeadingToHospital ? Colors.blueAccent.shade700 : Colors.redAccent.shade700,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            elevation: 4,
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        onPressed: () {
-                          if (isHeadingToHospital) {
-                            _launchWaze(
-                              mission.hospitalLat,
-                              mission.hospitalLng,
-                              address: mission.hospitalAddress ?? mission.hospitalName,
-                            );
-                          } else {
-                            _launchWaze(
-                              mission.patientLat,
-                              mission.patientLng,
-                              address: mission.patientAddress,
-                            );
-                          }
-                        },
-                        icon: const Icon(Icons.directions_car_rounded, color: Colors.cyanAccent),
-                        style: IconButton.styleFrom(
-                          backgroundColor: const Color(0xFF0F172A),
-                          padding: const EdgeInsets.all(14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () {
+                                  if (isHeadingToHospital) {
+                                    _launchWaze(
+                                      mission.hospitalLat,
+                                      mission.hospitalLng,
+                                      address: mission.hospitalAddress ?? mission.hospitalName,
+                                    );
+                                  } else {
+                                    _launchWaze(
+                                      mission.patientLat,
+                                      mission.patientLng,
+                                      address: mission.patientAddress,
+                                    );
+                                  }
+                                },
+                                icon: const Icon(Icons.directions_car_rounded, color: Colors.cyanAccent, size: 16),
+                                label: const Text('Open Waze', style: TextStyle(color: Colors.cyanAccent, fontSize: 12)),
+                                style: OutlinedButton.styleFrom(
+                                  side: const BorderSide(color: Colors.cyanAccent),
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () {
+                                  setState(() => _showTacticalMap = !_showTacticalMap);
+                                },
+                                icon: Icon(
+                                  _showTacticalMap ? Icons.map_rounded : Icons.map_outlined,
+                                  color: Colors.white70,
+                                  size: 16,
+                                ),
+                                label: Text(
+                                  _showTacticalMap ? 'Hide In-App Map' : 'Show In-App Map',
+                                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  side: const BorderSide(color: Colors.white24),
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                        tooltip: 'Open in Waze',
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -784,7 +883,9 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
                     ),
                   ],
                 ),
-              ),
+            // 2-WAY DISPATCH RADIO & CANNED TACTICAL ALERTS PANEL
+            _buildTacticalRadioPanel(mission),
+            const SizedBox(height: 18),
 
             // TACTILE MISSION PROGRESSION ACTIONS
             _buildTactileProgressionControls(currentStatus),
@@ -792,6 +893,199 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
             const SizedBox(height: 32),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Two-Way Dispatcher-to-Driver Push-To-Talk / Quick Canned Messages
+  Widget _buildTacticalRadioPanel(EmergencyRequestModel mission) {
+    final hasActiveAlert = mission.tacticalAlert != null || _lastSentAlert != null;
+    final isAcked = mission.tacticalAlertAck == true;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: hasActiveAlert && !isAcked ? Colors.amberAccent : Colors.white.withOpacity(0.12),
+          width: hasActiveAlert && !isAcked ? 1.5 : 1.0,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: (hasActiveAlert && !isAcked ? Colors.amber : Colors.black).withOpacity(0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withOpacity(0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.radio_rounded, color: Colors.amberAccent, size: 18),
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '2-WAY TACTICAL RADIO • CANNED STATUS',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.8,
+                        color: Colors.amberAccent,
+                      ),
+                    ),
+                    Text(
+                      '1-Tap to transmit tactical situation to Dispatch Console',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                    ),
+                  ],
+                ),
+              ),
+              if (_isSendingAlert)
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(color: Colors.amberAccent, strokeWidth: 2),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Active Tactical Alert Status Banner (if sent)
+          if (hasActiveAlert) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isAcked
+                    ? const Color(0xFF10B981).withOpacity(0.12)
+                    : Colors.amber.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: isAcked ? const Color(0xFF10B981) : Colors.amberAccent,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        isAcked ? Icons.check_circle_rounded : Icons.sensors_rounded,
+                        color: isAcked ? const Color(0xFF34D399) : Colors.amberAccent,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        isAcked ? 'DISPATCHER ACKNOWLEDGED' : 'TRANSMITTING PRIORITY ALERT',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          color: isAcked ? const Color(0xFF34D399) : Colors.amberAccent,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Alert: ${mission.tacticalAlert ?? _lastSentAlert}',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  if (mission.dispatcherResponse != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      '↳ Dispatch Desk: "${mission.dispatcherResponse}"',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF38BDF8),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+
+          // 5 Tactile Canned Alert Buttons
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildTacticalAlertChip(
+                code: 'TRAFFIC',
+                icon: Icons.traffic_rounded,
+                label: 'Stuck in Traffic / Road Blocked',
+                color: const Color(0xFFF97316),
+              ),
+              _buildTacticalAlertChip(
+                code: 'POLICE',
+                icon: Icons.local_police_rounded,
+                label: 'Need Police Escort',
+                color: const Color(0xFFEF4444),
+              ),
+              _buildTacticalAlertChip(
+                code: 'DIVERT',
+                icon: Icons.alt_route_rounded,
+                label: 'Hospital Divert Requested',
+                color: const Color(0xFF8B5CF6),
+              ),
+              _buildTacticalAlertChip(
+                code: 'CODE_BLUE',
+                icon: Icons.monitor_heart_rounded,
+                label: 'Patient Deteriorating / Code Blue',
+                color: const Color(0xFFDC2626),
+              ),
+              _buildTacticalAlertChip(
+                code: 'DELAY',
+                icon: Icons.local_gas_station_rounded,
+                label: 'Refueling / Mechanical Delay',
+                color: const Color(0xFFEAB308),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTacticalAlertChip({
+    required String code,
+    required IconData icon,
+    required String label,
+    required Color color,
+  }) {
+    return ElevatedButton.icon(
+      onPressed: _isSendingAlert ? null : () => _sendTacticalAlert(code, label),
+      icon: Icon(icon, size: 16, color: Colors.white),
+      label: Text(
+        label,
+        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+      ),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: color.withOpacity(0.2),
+        foregroundColor: Colors.white,
+        side: BorderSide(color: color.withOpacity(0.6), width: 1.2),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        elevation: 0,
       ),
     );
   }

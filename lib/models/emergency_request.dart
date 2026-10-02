@@ -17,6 +17,12 @@ class EmergencyRequestModel {
   final String? patientAgeBand;
   final String? priority;
   final Map<String, dynamic>? hospital;
+  final String? tacticalAlert;
+  final String? tacticalAlertCode;
+  final String? tacticalAlertAt;
+  final bool? tacticalAlertAck;
+  final String? dispatcherResponse;
+  final String? dispatcherResponseAt;
 
   EmergencyRequestModel({
     required this.id,
@@ -37,6 +43,12 @@ class EmergencyRequestModel {
     this.patientAgeBand,
     this.priority,
     this.hospital,
+    this.tacticalAlert,
+    this.tacticalAlertCode,
+    this.tacticalAlertAt,
+    this.tacticalAlertAck,
+    this.dispatcherResponse,
+    this.dispatcherResponseAt,
   });
 
   static double? _parseDouble(dynamic val) {
@@ -77,6 +89,12 @@ class EmergencyRequestModel {
       patientAgeBand: json['patient_age_band'] as String?,
       priority: json['priority']?.toString(),
       hospital: _parseHospital(rawHospital),
+      tacticalAlert: json['tactical_alert'] as String?,
+      tacticalAlertCode: json['tactical_alert_code'] as String?,
+      tacticalAlertAt: json['tactical_alert_at'] as String?,
+      tacticalAlertAck: json['tactical_alert_ack'] as bool?,
+      dispatcherResponse: json['dispatcher_response'] as String?,
+      dispatcherResponseAt: json['dispatcher_response_at'] as String?,
     );
   }
 

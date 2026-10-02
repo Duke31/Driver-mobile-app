@@ -56,7 +56,11 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
   }
 
   void _startTelemetry() {
-    _telemetry.startTelemetry(widget.driver.id);
+    _telemetry.startTelemetry(
+      widget.driver.id,
+      driverName: widget.driver.displayName,
+      vehicleLabel: widget.driver.vehicleLabel,
+    );
   }
 
   void _setupRealtimeDispatchChannel() {
@@ -400,6 +404,61 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
           ],
         ),
         actions: [
+          // Feature B: Prominent On-Duty / Off-Duty Quick Toggle
+          ValueListenableBuilder<bool>(
+            valueListenable: _telemetry.isOnDutyNotifier,
+            builder: (_, isOnDuty, __) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 6.0),
+                  child: InkWell(
+                    onTap: () {
+                      _telemetry.toggleDuty(
+                        widget.driver.id,
+                        driverName: widget.driver.displayName,
+                        vehicleLabel: widget.driver.vehicleLabel,
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: isOnDuty ? const Color(0xFF10B981).withOpacity(0.18) : Colors.white12,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isOnDuty ? const Color(0xFF10B981) : Colors.white38,
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: isOnDuty ? const Color(0xFF34D399) : Colors.white54,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            isOnDuty ? 'ON DUTY' : 'OFF DUTY',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.6,
+                              color: isOnDuty ? const Color(0xFF34D399) : Colors.white70,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
           // Audio Alert Mute Toggle
           IconButton(
             icon: Icon(
@@ -425,6 +484,48 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
       body: SafeArea(
         child: Column(
           children: [
+            // Prominent Off-Duty Persistent Status Warning
+            ValueListenableBuilder<bool>(
+              valueListenable: _telemetry.isOnDutyNotifier,
+              builder: (_, isOnDuty, __) {
+                if (isOnDuty) return const SizedBox.shrink();
+                return Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  color: const Color(0xFF334155),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.pause_circle_outline_rounded, color: Colors.amberAccent, size: 22),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          'Unit is OFF DUTY • Telemetry paused. You will not receive emergency dispatch calls.',
+                          style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: () {
+                          _telemetry.startTelemetry(
+                            widget.driver.id,
+                            driverName: widget.driver.displayName,
+                            vehicleLabel: widget.driver.vehicleLabel,
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF10B981),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          minimumSize: Size.zero,
+                        ),
+                        child: const Text('Go On Duty', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+
             // Live Audible Siren Banner (if dispatch triggered)
             if (_incomingAlertMessage != null)
               Material(

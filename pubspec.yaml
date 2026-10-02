@@ -32,12 +32,20 @@ dependencies:
   # Audio Chime / Siren on incoming dispatch
   audioplayers: ^6.1.0
 
+  # Firebase Cloud Messaging & Background Push Wake-Up
+  firebase_core: ^3.6.0
+  firebase_messaging: ^15.1.3
+
+  # High-Priority Local Notifications & Sticky Foreground Keep-Alive
+  flutter_local_notifications: ^17.2.3
+
   # Utilities & UI
   google_fonts: ^6.2.1
 
   # In-App Tactical Live Map (OpenStreetMap & GPS Routing)
   flutter_map: ^7.0.2
   latlong2: ^0.9.1
+
 
 dev_dependencies:
   flutter_test:

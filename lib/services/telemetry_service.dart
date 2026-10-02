@@ -5,6 +5,7 @@ import 'package:battery_plus/battery_plus.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'fcm_notification_service.dart';
 
 class TelemetryService {
   static final TelemetryService _instance = TelemetryService._internal();
@@ -13,6 +14,7 @@ class TelemetryService {
 
   final Battery _battery = Battery();
   final Connectivity _connectivity = Connectivity();
+  final FcmNotificationService _fcm = FcmNotificationService();
 
   StreamSubscription<Position>? _positionSubscription;
   Timer? _telemetryTimer;
@@ -22,23 +24,49 @@ class TelemetryService {
   bool isCharging = false;
   String networkType = 'wifi';
   String? currentDriverId;
+  String? currentDriverName;
+  String? currentVehicleLabel;
   bool isStreaming = false;
 
   final ValueNotifier<Position?> positionNotifier = ValueNotifier<Position?>(null);
   final ValueNotifier<String> statusNotifier = ValueNotifier<String>('Standby');
+  final ValueNotifier<bool> isOnDutyNotifier = ValueNotifier<bool>(true);
 
-  Future<void> startTelemetry(String driverId) async {
+  bool get isOnDuty => isOnDutyNotifier.value;
+
+  Future<void> startTelemetry(
+    String driverId, {
+    String? driverName,
+    String? vehicleLabel,
+  }) async {
     currentDriverId = driverId;
+    if (driverName != null) currentDriverName = driverName;
+    if (vehicleLabel != null) currentVehicleLabel = vehicleLabel;
     isStreaming = true;
+    isOnDutyNotifier.value = true;
 
-    // 1. Keep ambulance screen awake
+    // 1. Keep ambulance screen awake on dash
     try {
       await WakelockPlus.enable();
     } catch (e) {
       debugPrint('Wakelock error: $e');
     }
 
-    // 2. Request Location Permissions
+    // 2. Register FCM token & show persistent foreground keep-alive notification
+    try {
+      await _fcm.registerDriver(driverId);
+      await _fcm.showPersistentDutyNotification(
+        driverName: currentDriverName ?? 'Ambulance Unit',
+        vehicleLabel: currentVehicleLabel,
+      );
+    } catch (e) {
+      debugPrint('FCM persistent notification error: $e');
+    }
+
+    // 3. Mark On Duty in database
+    _setDutyInBackend(driverId, true);
+
+    // 4. Request Location Permissions
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
@@ -53,7 +81,7 @@ class TelemetryService {
       return;
     }
 
-    // 3. Get initial position
+    // 5. Get initial position
     try {
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
@@ -64,7 +92,8 @@ class TelemetryService {
       debugPrint('Error getting initial position: $e');
     }
 
-    // 4. Stream continuous location updates
+    // 6. Stream continuous location updates
+    await _positionSubscription?.cancel();
     const locationSettings = LocationSettings(
       accuracy: LocationAccuracy.bestForNavigation,
       distanceFilter: 5, // update every 5 meters
@@ -77,7 +106,8 @@ class TelemetryService {
       statusNotifier.value = 'GPS Signal Weak';
     });
 
-    // 5. Periodic hardware telemetry sync (battery & network) every 10 seconds
+    // 7. Periodic hardware telemetry sync (battery & network) every 10 seconds
+    _telemetryTimer?.cancel();
     _telemetryTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
       await _syncTelemetryToBackend();
     });
@@ -92,7 +122,7 @@ class TelemetryService {
   }
 
   Future<void> _syncTelemetryToBackend() async {
-    if (currentDriverId == null || currentPosition == null) return;
+    if (currentDriverId == null || currentPosition == null || !isOnDuty) return;
 
     try {
       // Read battery
@@ -131,15 +161,59 @@ class TelemetryService {
     }
   }
 
-  Future<void> stopTelemetry() async {
+  Future<void> _setDutyInBackend(String driverId, bool onDuty) async {
+    try {
+      await Supabase.instance.client.rpc('set_driver_duty_status', params: {
+        'p_driver_id': driverId,
+        'p_is_on_duty': onDuty,
+      });
+    } catch (_) {
+      try {
+        await Supabase.instance.client
+            .from('drivers')
+            .update({
+              'active': onDuty,
+              'duty_status': onDuty ? 'on_duty' : 'off_duty',
+              'last_active_at': DateTime.now().toIso8601String(),
+            })
+            .eq('id', driverId);
+      } catch (e) {
+        debugPrint('set_driver_duty_status error: $e');
+      }
+    }
+  }
+
+  /// Feature B: Toggle On Duty vs Off Duty
+  Future<void> toggleDuty(String driverId, {String? driverName, String? vehicleLabel}) async {
+    if (isOnDuty) {
+      await stopTelemetry(setOffDuty: true);
+    } else {
+      await startTelemetry(driverId, driverName: driverName, vehicleLabel: vehicleLabel);
+    }
+  }
+
+  Future<void> stopTelemetry({bool setOffDuty = true}) async {
     isStreaming = false;
+    if (setOffDuty) {
+      isOnDutyNotifier.value = false;
+    }
     await _positionSubscription?.cancel();
     _positionSubscription = null;
     _telemetryTimer?.cancel();
     _telemetryTimer = null;
+
     try {
       await WakelockPlus.disable();
     } catch (_) {}
+
+    try {
+      await _fcm.cancelPersistentDutyNotification();
+    } catch (_) {}
+
+    if (setOffDuty && currentDriverId != null) {
+      _setDutyInBackend(currentDriverId!, false);
+    }
+
     statusNotifier.value = 'Off Duty';
   }
 }
