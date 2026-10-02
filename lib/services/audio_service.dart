@@ -13,7 +13,7 @@ class AudioAlarmService {
     if (_isContextConfigured) return;
     try {
       await _player.setAudioContext(
-        const AudioContext(
+        AudioContext(
           android: AudioContextAndroid(
             isSpeakerphoneOn: true,
             stayAwake: true,
