@@ -47,26 +47,50 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
   Future<void> _sendTacticalAlert(String code, String alertMessage) async {
     if (widget.activeMission == null) return;
     final reqId = widget.activeMission!.id;
-
     setState(() {
       _isSendingAlert = true;
       _lastSentAlert = alertMessage;
     });
 
     bool transmitted = false;
+    final now = DateTime.now();
+    final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
-    // Strategy 1: Direct update to emergency_requests table
+    // Strategy 1: Robust SECURITY DEFINER RPC trigger_driver_emergency_alert
     try {
-      await Supabase.instance.client.from('emergency_requests').update({
-        'tactical_alert': alertMessage,
-        'tactical_alert_code': code,
-        'tactical_alert_at': DateTime.now().toIso8601String(),
-        'tactical_alert_ack': false,
-      }).eq('id', reqId);
-      transmitted = true;
-    } catch (_) {}
+      final rpcRes = await Supabase.instance.client.rpc('trigger_driver_emergency_alert', params: {
+        'p_request_id': reqId,
+        'p_alert_code': code,
+        'p_alert_message': alertMessage,
+      });
+      if (rpcRes != null) transmitted = true;
+    } catch (e) {
+      debugPrint('Strategy 1 RPC trigger_driver_emergency_alert notice: $e');
+    }
 
-    // Strategy 2: Call RPC send_driver_tactical_alert
+    // Strategy 2: Direct Supabase Realtime Broadcast to Dispatch Console (ops-request-board-sync)
+    try {
+      final broadcastChannel = Supabase.instance.client.channel('ops-request-board-sync');
+      await broadcastChannel.subscribe();
+      await broadcastChannel.send(
+        type: RealtimeListenTypes.broadcast,
+        event: 'driver_tactical_alert',
+        payload: {
+          'request_id': reqId,
+          'driver_id': widget.driver.id,
+          'driver_name': widget.driver.displayName,
+          'vehicle_label': widget.driver.vehicleLabel,
+          'alert_code': code,
+          'alert_message': alertMessage,
+          'created_at': now.toIso8601String(),
+        },
+      );
+      transmitted = true;
+    } catch (e) {
+      debugPrint('Strategy 2 Realtime broadcast notice: $e');
+    }
+
+    // Strategy 3: RPC send_driver_tactical_alert
     if (!transmitted) {
       try {
         await Supabase.instance.client.rpc('send_driver_tactical_alert', params: {
@@ -75,24 +99,33 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
           'p_alert_message': alertMessage,
         });
         transmitted = true;
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('Strategy 3 RPC send_driver_tactical_alert notice: $e');
+      }
     }
 
-    // Strategy 3: Always append to notes so Dispatcher immediately sees it in the feed
+    // Strategy 4: Direct append to notes
     try {
-      final now = DateTime.now();
-      final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
       final existingNotes = widget.activeMission!.notes ?? '';
       final updatedNotes = existingNotes.isEmpty
-          ? '[TACTICAL RADIO $timeStr]: $alertMessage'
-          : '$existingNotes\n[TACTICAL RADIO $timeStr]: $alertMessage';
-
+          ? '[TACTICAL ALERT $timeStr]: $alertMessage'
+          : '$existingNotes\n[TACTICAL ALERT $timeStr]: $alertMessage';
       await Supabase.instance.client.from('emergency_requests').update({
         'notes': updatedNotes,
       }).eq('id', reqId);
       transmitted = true;
     } catch (_) {}
 
+    // Strategy 5: Direct update to tactical_alert columns
+    try {
+      await Supabase.instance.client.from('emergency_requests').update({
+        'tactical_alert': alertMessage,
+        'tactical_alert_code': code,
+        'tactical_alert_at': now.toIso8601String(),
+        'tactical_alert_ack': false,
+      }).eq('id', reqId);
+      transmitted = true;
+    } catch (_) {}
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

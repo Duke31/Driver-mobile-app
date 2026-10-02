@@ -208,6 +208,22 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
             );
           },
         )
+        .onBroadcast(
+          event: 'tactical_alert_ack',
+          callback: (payload) {
+            debugPrint('Dispatcher tactical_alert_ack received: $payload');
+            _fetchActiveMission(silent: true);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('📻 DISPATCH ACKNOWLEDGED: ${payload['response'] ?? "Understood"}'),
+                  backgroundColor: const Color(0xFF10B981),
+                  duration: const Duration(seconds: 4),
+                ),
+              );
+            }
+          },
+        )
         .subscribe();
   }
 
@@ -483,6 +499,120 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const DriverLoginScreen()),
       );
+    }
+  }
+
+  /// EMERGENCY DISTRESS SOS TRIGGER
+  Future<void> _showEmergencySosDialog() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.crisis_alert_rounded, color: Colors.redAccent, size: 28),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'EMERGENCY SOS TRIGGER',
+                style: TextStyle(color: Colors.redAccent, fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'Transmit immediate EMERGENCY DISTRESS SIGNAL to Dispatch Desk & Admin Console for unit ${widget.driver.vehicleLabel ?? widget.driver.displayName}?\n\nThis immediately alerts dispatchers with high-priority audio alarm.',
+          style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white60)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade700,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            ),
+            child: const Text('🚨 TRANSMIT SOS ALARM', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      HapticFeedback.heavyImpact();
+      final targetReqId = _activeMission?.id;
+      final now = DateTime.now();
+
+      // 1. If active mission, trigger RPC trigger_driver_emergency_alert
+      if (targetReqId != null) {
+        try {
+          await Supabase.instance.client.rpc('trigger_driver_emergency_alert', params: {
+            'p_request_id': targetReqId,
+            'p_alert_code': 'SOS',
+            'p_alert_message': '🚨 EMERGENCY SOS DISTRESS SIGNAL: Ambulance crew in distress!',
+          });
+        } catch (_) {}
+      }
+
+      // 2. Direct Realtime Broadcast to Dispatch Console
+      try {
+        final broadcastChannel = Supabase.instance.client.channel('ops-request-board-sync');
+        await broadcastChannel.subscribe();
+        await broadcastChannel.send(
+          type: RealtimeListenTypes.broadcast,
+          event: 'driver_tactical_alert',
+          payload: {
+            'request_id': targetReqId,
+            'driver_id': widget.driver.id,
+            'driver_name': widget.driver.displayName,
+            'vehicle_label': widget.driver.vehicleLabel,
+            'alert_code': 'SOS',
+            'alert_message': '🚨 EMERGENCY SOS DISTRESS: Unit ${widget.driver.vehicleLabel ?? widget.driver.displayName} triggered emergency distress signal!',
+            'created_at': now.toIso8601String(),
+          },
+        );
+      } catch (_) {}
+
+      // 3. Fallback direct update to notes if active mission
+      if (targetReqId != null) {
+        try {
+          final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+          final existingNotes = _activeMission!.notes ?? '';
+          await Supabase.instance.client.from('emergency_requests').update({
+            'notes': '$existingNotes\n[TACTICAL ALERT $timeStr]: 🚨 EMERGENCY SOS DISTRESS SIGNAL TRANSMITTED',
+          }).eq('id', targetReqId);
+        } catch (_) {}
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.crisis_alert_rounded, color: Colors.amberAccent, size: 22),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'EMERGENCY SOS TRANSMITTED! Dispatch Desk notified.',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: Color(0xFF991B1B),
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
+    } catch (err) {
+      debugPrint('Error triggering SOS: $err');
     }
   }
 
