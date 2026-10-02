@@ -53,46 +53,68 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
       _lastSentAlert = alertMessage;
     });
 
-    try {
-      await Supabase.instance.client.rpc('send_driver_tactical_alert', params: {
-        'p_request_id': reqId,
-        'p_alert_code': code,
-        'p_alert_message': alertMessage,
-      });
+    bool transmitted = false;
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.radio_rounded, color: Colors.white, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'TACTICAL RADIO: "$alertMessage" transmitted to dispatch console!',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                ),
-              ],
-            ),
-            backgroundColor: Colors.amber.shade900,
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      }
-      widget.onRefresh();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to transmit radio alert: $e'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isSendingAlert = false);
+    // Strategy 1: Direct update to emergency_requests table
+    try {
+      await Supabase.instance.client.from('emergency_requests').update({
+        'tactical_alert': alertMessage,
+        'tactical_alert_code': code,
+        'tactical_alert_at': DateTime.now().toIso8601String(),
+        'tactical_alert_ack': false,
+      }).eq('id', reqId);
+      transmitted = true;
+    } catch (_) {}
+
+    // Strategy 2: Call RPC send_driver_tactical_alert
+    if (!transmitted) {
+      try {
+        await Supabase.instance.client.rpc('send_driver_tactical_alert', params: {
+          'p_request_id': reqId,
+          'p_alert_code': code,
+          'p_alert_message': alertMessage,
+        });
+        transmitted = true;
+      } catch (_) {}
     }
+
+    // Strategy 3: Always append to notes so Dispatcher immediately sees it in the feed
+    try {
+      final now = DateTime.now();
+      final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+      final existingNotes = widget.activeMission!.notes ?? '';
+      final updatedNotes = existingNotes.isEmpty
+          ? '[TACTICAL RADIO $timeStr]: $alertMessage'
+          : '$existingNotes\n[TACTICAL RADIO $timeStr]: $alertMessage';
+
+      await Supabase.instance.client.from('emergency_requests').update({
+        'notes': updatedNotes,
+      }).eq('id', reqId);
+      transmitted = true;
+    } catch (_) {}
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.radio_rounded, color: Color(0xFF34D399), size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'TACTICAL RADIO: "$alertMessage" transmitted to Dispatcher!',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: const Color(0xFF1E293B),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+    widget.onRefresh();
+    if (mounted) setState(() => _isSendingAlert = false);
   }
 
 

@@ -46,6 +46,23 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
     _fetchActiveMission();
     _fetchAvailableJobs();
     _setupRealtimeDispatchChannel();
+
+    // Listen for proactive background emergency detection from TelemetryService
+    _telemetry.onEmergencyAssigned = (missionMap) {
+      if (mounted) {
+        try {
+          final mission = EmergencyRequestModel.fromJson(missionMap);
+          setState(() {
+            _activeMission = mission;
+            _currentTabIndex = 0; // Focus directly on Active Mission
+            _incomingAlertMessage = '🚨 EMERGENCY DISPATCH: ${mission.emergencyType ?? "Priority Run"} assigned to your unit!';
+          });
+          _telemetry.setActiveMissionState(mission.id);
+        } catch (e) {
+          debugPrint('Error parsing assigned mission from background telemetry: $e');
+        }
+      }
+    };
   }
 
   @override
@@ -92,6 +109,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
                   _activeMission = null;
                 });
               }
+              _telemetry.setActiveMissionState(null);
               if (reqStatus?.toLowerCase().contains('cancel') == true) {
                 _triggerAlarm('⚠️ MISSION CANCELLED: Dispatcher has cancelled this emergency run.');
               }
@@ -107,6 +125,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
                 if (mounted) {
                   setState(() => _activeMission = null);
                 }
+                _telemetry.setActiveMissionState(null);
                 _fetchJobHistory();
                 return;
               }
@@ -120,6 +139,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
                     _currentTabIndex = 0; // Focus on active mission
                   });
                 }
+                _telemetry.setActiveMissionState(fastModel.id);
               } catch (parseErr) {
                 debugPrint('Fast parse error from WebSocket: $parseErr');
               }
@@ -133,6 +153,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
               if (mounted) {
                 setState(() => _activeMission = null);
               }
+              _telemetry.setActiveMissionState(null);
               _fetchActiveMission(silent: true);
             } else if (reqStatus == 'pending' || reqStatus == 'broadcasted' || reqStatus == 'Pending' || reqStatus == 'Requested' || reqStatus == 'Matching') {
               _fetchAvailableJobs(silent: true);
@@ -193,7 +214,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
             .from('emergency_requests')
             .select('*, hospitals:hospitals(*)')
             .eq('driver_id', widget.driver.id)
-            .not('status', 'in', '("Completed","Cancelled / failed")')
+            .not('status', 'in', '("Completed","Cancelled / failed","cancelled","completed")')
             .order('created_at', ascending: false)
             .limit(1)
             .maybeSingle();
@@ -212,11 +233,12 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
         if (activeRecord != null) {
           _activeMission = EmergencyRequestModel.fromJson(Map<String, dynamic>.from(activeRecord as Map));
           _activeFetchError = null;
+          _telemetry.setActiveMissionState(_activeMission!.id);
         } else {
           // If no active run exists in database, cleanly clear mission from screen
           _activeMission = null;
-          // Standby is a clean, normal state, not an error!
           _activeFetchError = null;
+          _telemetry.setActiveMissionState(null);
         }
         _isLoadingActive = false;
       });
@@ -230,7 +252,6 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
     List<dynamic> listData = [];
     bool rpcSucceeded = false;
 
-    // Strategy 1: Call RPC
     try {
       final res = await Supabase.instance.client.rpc('get_available_emergency_jobs');
       rpcSucceeded = true;
@@ -241,14 +262,13 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
       debugPrint('RPC get_available_emergency_jobs notice: $rpcErr');
     }
 
-    // Strategy 2: Fallback to direct query only if RPC failed and returned no data
     if (!rpcSucceeded && listData.isEmpty) {
       try {
         final queryRes = await Supabase.instance.client
             .from('emergency_requests')
             .select('*, hospitals:hospitals(*)')
             .isFilter('driver_id', null)
-            .not('status', 'in', '("Completed","Cancelled / failed")')
+            .not('status', 'in', '("Completed","Cancelled / failed","cancelled","completed")')
             .order('created_at', ascending: false)
             .limit(20);
 
@@ -262,49 +282,31 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
     }
 
     if (mounted) {
-      try {
-        final list = listData
+      setState(() {
+        _availableJobs = listData
             .map((item) => EmergencyRequestModel.fromJson(Map<String, dynamic>.from(item as Map)))
             .toList();
-        setState(() {
-          _availableJobs = list;
-          _isLoadingAvailable = false;
-          _availableFetchError = null;
-        });
-      } catch (parseErr) {
-        debugPrint('Parse error in available jobs: $parseErr');
-        setState(() {
-          _isLoadingAvailable = false;
-          _availableFetchError = 'Parse error: $parseErr';
-        });
-      }
+        _isLoadingAvailable = false;
+      });
     }
   }
 
   Future<void> _fetchJobHistory() async {
     setState(() => _isLoadingHistory = true);
     try {
-      dynamic res;
-      try {
-        res = await Supabase.instance.client.rpc('get_driver_job_history', params: {
-          'p_driver_id': widget.driver.id,
-        });
-      } catch (_) {
-        res = await Supabase.instance.client
-            .from('emergency_requests')
-            .select('*, hospitals:hospitals(*)')
-            .eq('driver_id', widget.driver.id)
-            .inFilter('status', ['Completed', 'Cancelled / failed'])
-            .order('created_at', ascending: false)
-            .limit(30);
-      }
+      final res = await Supabase.instance.client
+          .from('emergency_requests')
+          .select('*, hospitals:hospitals(*)')
+          .eq('driver_id', widget.driver.id)
+          .inFilter('status', ['Completed', 'completed', 'Cancelled / failed', 'cancelled'])
+          .order('created_at', ascending: false)
+          .limit(30);
 
       if (mounted) {
-        final list = (res is List ? res : [])
-            .map((item) => EmergencyRequestModel.fromJson(Map<String, dynamic>.from(item as Map)))
-            .toList();
         setState(() {
-          _jobHistory = list;
+          _jobHistory = (res as List)
+              .map((item) => EmergencyRequestModel.fromJson(Map<String, dynamic>.from(item as Map)))
+              .toList();
           _isLoadingHistory = false;
         });
       }
@@ -314,24 +316,28 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
     }
   }
 
-  void _onMissionAccepted(EmergencyRequestModel job) {
-    _dismissAlarm();
+  void _onMissionAccepted(EmergencyRequestModel acceptedMission) {
     setState(() {
-      _currentTabIndex = 0;
+      _activeMission = acceptedMission;
+      _currentTabIndex = 0; // Instantly navigate to Active Mission tab
     });
+    _telemetry.setActiveMissionState(acceptedMission.id);
     _fetchActiveMission();
-    _fetchAvailableJobs();
+    _fetchAvailableJobs(silent: true);
   }
 
-  void _signOut() async {
+  Future<void> _signOut() async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1E293B),
-        title: const Text('End Shift & Sign Out?', style: TextStyle(color: Colors.white)),
-        content: const Text(
-          'This will terminate live GPS telemetry and return you to the driver sign-in screen.',
-          style: TextStyle(color: Colors.white70),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('End Shift & Sign Out', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: Text(
+          _activeMission != null
+              ? 'WARNING: You have an ACTIVE MISSION in progress. You should complete the emergency run or notify Dispatch before ending your shift.'
+              : 'Are you sure you want to end your shift? Your GPS telemetry will stop transmitting.',
+          style: const TextStyle(color: Color(0xFF94A3B8)),
         ),
         actions: [
           TextButton(
@@ -341,21 +347,257 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-            child: const Text('Sign Out', style: TextStyle(color: Colors.white)),
+            child: const Text('Confirm Sign Out'),
           ),
         ],
       ),
     );
 
-    if (confirm == true) {
-      await _telemetry.stopTelemetry();
-      await Supabase.instance.client.auth.signOut();
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const DriverLoginScreen()),
-        );
-      }
+    if (confirm != true) return;
+
+    await _telemetry.stopTelemetry(setOffDuty: true);
+    await Supabase.instance.client.auth.signOut();
+    if (mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const DriverLoginScreen()),
+      );
     }
+  }
+
+  /// SECURITY-GUARDED DUTY STATUS TOGGLE
+  Future<void> _handleDutyToggle() async {
+    // 1. Strict Security Guard: Cannot go off-duty while mission is active!
+    if (_activeMission != null || !_telemetry.canGoOffDuty) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF1E293B),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.shield_rounded, color: Colors.amberAccent, size: 26),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Action Denied: Active Run',
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          content: const Text(
+            'Operational Security Policy: You cannot go Off-Duty or pause location tracking while actively assigned to an emergency mission.\n\nComplete the current run or coordinate with Dispatch to reassign before changing your duty status.',
+            style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13, height: 1.4),
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0F172A),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Understood'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final wasOnDuty = _telemetry.isOnDuty;
+
+    // 2. Prompt confirmation when going off duty
+    if (wasOnDuty) {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF1E293B),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Confirm Off-Duty Status', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          content: const Text(
+            'Switching to Off-Duty will pause live GPS telemetry and signal Dispatch that your unit is off-shift and unavailable for emergency calls.',
+            style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Stay On Duty', style: TextStyle(color: Colors.white60)),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF59E0B)),
+              child: const Text('Go Off-Duty'),
+            ),
+          ],
+        ),
+      );
+      if (confirm != true) return;
+    }
+
+    await _telemetry.toggleDuty(
+      widget.driver.id,
+      driverName: widget.driver.displayName,
+      vehicleLabel: widget.driver.vehicleLabel,
+    );
+  }
+
+  /// DEDICATED TACTICAL COMMAND BAR (Fixes UI clash completely)
+  Widget _buildTacticalCommandBar() {
+    final hasMission = _activeMission != null || _telemetry.hasActiveMission;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: const BoxDecoration(
+        color: Color(0xFF1E293B),
+        border: Border(
+          bottom: BorderSide(color: Color(0xFF334155), width: 1),
+        ),
+      ),
+      child: Row(
+        children: [
+          // Left: Telemetry & Beacon indicator
+          Expanded(
+            child: ValueListenableBuilder<String>(
+              valueListenable: _telemetry.statusNotifier,
+              builder: (_, status, __) {
+                final isTransmitting = status.contains('Transmitting');
+                return Row(
+                  children: [
+                    Container(
+                      width: 9,
+                      height: 9,
+                      decoration: BoxDecoration(
+                        color: hasMission
+                            ? const Color(0xFFEF4444)
+                            : (isTransmitting ? const Color(0xFF34D399) : Colors.amberAccent),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          if (isTransmitting || hasMission)
+                            BoxShadow(
+                              color: (hasMission ? Colors.redAccent : const Color(0xFF34D399)).withOpacity(0.6),
+                              blurRadius: 6,
+                              spreadRadius: 1,
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            hasMission
+                                ? 'ACTIVE MISSION GPS'
+                                : (isTransmitting ? 'TELEMETRY ONLINE' : 'TELEMETRY PAUSED'),
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.6,
+                              color: hasMission
+                                  ? Colors.redAccent
+                                  : (isTransmitting ? const Color(0xFF34D399) : Colors.white60),
+                            ),
+                          ),
+                          Text(
+                            hasMission
+                                ? 'Location locked to Dispatcher'
+                                : (isTransmitting ? 'Continuous high-accuracy GPS' : 'Unit standby (Off Duty)'),
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+
+          const SizedBox(width: 10),
+
+          // Right: On Duty / Off Duty Quick Toggle (Glove-Friendly)
+          ValueListenableBuilder<bool>(
+            valueListenable: _telemetry.isOnDutyNotifier,
+            builder: (_, isOnDuty, __) {
+              if (hasMission) {
+                return InkWell(
+                  onTap: _handleDutyToggle,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade900.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.redAccent, width: 1.5),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.lock_rounded, size: 13, color: Colors.redAccent),
+                        SizedBox(width: 4),
+                        Text(
+                          'ON DUTY (LOCKED)',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.redAccent,
+                            letterSpacing: 0.4,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
+              return InkWell(
+                onTap: _handleDutyToggle,
+                borderRadius: BorderRadius.circular(8),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: isOnDuty ? const Color(0xFF10B981).withOpacity(0.18) : const Color(0xFF334155),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isOnDuty ? const Color(0xFF10B981) : Colors.white38,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: isOnDuty ? const Color(0xFF34D399) : Colors.white54,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        isOnDuty ? 'ON DUTY' : 'OFF DUTY',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                          color: isOnDuty ? const Color(0xFF34D399) : Colors.white70,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -365,101 +607,29 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E293B),
         elevation: 0,
+        leading: const Padding(
+          padding: EdgeInsets.only(left: 12.0),
+          child: Icon(Icons.local_hospital_rounded, color: Colors.redAccent, size: 24),
+        ),
+        leadingWidth: 36,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Row(
-              children: [
-                const Icon(Icons.emergency_rounded, color: Colors.redAccent, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  widget.driver.displayName,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-                ),
-              ],
+            Text(
+              widget.driver.displayName,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+              overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(height: 2),
-            ValueListenableBuilder<String>(
-              valueListenable: _telemetry.statusNotifier,
-              builder: (_, status, __) {
-                return Row(
-                  children: [
-                    Container(
-                      width: 7,
-                      height: 7,
-                      decoration: BoxDecoration(
-                        color: status.contains('Transmitting') ? const Color(0xFF34D399) : Colors.amberAccent,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      '${widget.driver.vehicleLabel ?? "Unit"} • $status',
-                      style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
-                    ),
-                  ],
-                );
-              },
+            Text(
+              '${widget.driver.vehicleLabel ?? "Ambulance Unit"} • ${widget.driver.contactPhone ?? ""}',
+              style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),
         actions: [
-          // Feature B: Prominent On-Duty / Off-Duty Quick Toggle
-          ValueListenableBuilder<bool>(
-            valueListenable: _telemetry.isOnDutyNotifier,
-            builder: (_, isOnDuty, __) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 6.0),
-                  child: InkWell(
-                    onTap: () {
-                      _telemetry.toggleDuty(
-                        widget.driver.id,
-                        driverName: widget.driver.displayName,
-                        vehicleLabel: widget.driver.vehicleLabel,
-                      );
-                    },
-                    borderRadius: BorderRadius.circular(20),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: isOnDuty ? const Color(0xFF10B981).withOpacity(0.18) : Colors.white12,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: isOnDuty ? const Color(0xFF10B981) : Colors.white38,
-                          width: 1.5,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: isOnDuty ? const Color(0xFF34D399) : Colors.white54,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            isOnDuty ? 'ON DUTY' : 'OFF DUTY',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.6,
-                              color: isOnDuty ? const Color(0xFF34D399) : Colors.white70,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-          // Audio Alert Mute Toggle
+          // Audio Siren Alert Mute Toggle
           IconButton(
             icon: Icon(
               _isAudioMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
@@ -484,11 +654,14 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Prominent Off-Duty Persistent Status Warning
+            // Dedicated Tactical Status & On-Duty Control Bar (Never overlaps)
+            _buildTacticalCommandBar(),
+
+            // Prominent Off-Duty Persistent Status Warning (when driver is off shift)
             ValueListenableBuilder<bool>(
               valueListenable: _telemetry.isOnDutyNotifier,
               builder: (_, isOnDuty, __) {
-                if (isOnDuty) return const SizedBox.shrink();
+                if (isOnDuty || _activeMission != null) return const SizedBox.shrink();
                 return Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),

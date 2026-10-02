@@ -6,6 +6,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'fcm_notification_service.dart';
+import 'audio_service.dart';
 
 class TelemetryService {
   static final TelemetryService _instance = TelemetryService._internal();
@@ -15,6 +16,7 @@ class TelemetryService {
   final Battery _battery = Battery();
   final Connectivity _connectivity = Connectivity();
   final FcmNotificationService _fcm = FcmNotificationService();
+  final AudioAlarmService _audio = AudioAlarmService();
 
   StreamSubscription<Position>? _positionSubscription;
   Timer? _telemetryTimer;
@@ -28,11 +30,31 @@ class TelemetryService {
   String? currentVehicleLabel;
   bool isStreaming = false;
 
+  // Active mission state & security lock
+  bool hasActiveMission = false;
+  String? activeMissionId;
+  String? _lastAlertedMissionId;
+  Function(Map<String, dynamic> mission)? onEmergencyAssigned;
+
   final ValueNotifier<Position?> positionNotifier = ValueNotifier<Position?>(null);
   final ValueNotifier<String> statusNotifier = ValueNotifier<String>('Standby');
   final ValueNotifier<bool> isOnDutyNotifier = ValueNotifier<bool>(true);
 
   bool get isOnDuty => isOnDutyNotifier.value;
+
+  /// Check whether driver can safely toggle off duty
+  bool get canGoOffDuty => !hasActiveMission;
+
+  void setActiveMissionState(String? missionId) {
+    if (missionId != null && missionId.isNotEmpty) {
+      hasActiveMission = true;
+      activeMissionId = missionId;
+      isOnDutyNotifier.value = true; // Force On Duty while mission active
+    } else {
+      hasActiveMission = false;
+      activeMissionId = null;
+    }
+  }
 
   Future<void> startTelemetry(
     String driverId, {
@@ -106,10 +128,11 @@ class TelemetryService {
       statusNotifier.value = 'GPS Signal Weak';
     });
 
-    // 7. Periodic hardware telemetry sync (battery & network) every 10 seconds
+    // 7. Periodic background telemetry sync & active emergency detector (every 6 seconds)
     _telemetryTimer?.cancel();
-    _telemetryTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
+    _telemetryTimer = Timer.periodic(const Duration(seconds: 6), (_) async {
       await _syncTelemetryToBackend();
+      await _checkForAssignedEmergencies();
     });
 
     statusNotifier.value = 'Transmitting Live Telemetry';
@@ -122,7 +145,8 @@ class TelemetryService {
   }
 
   Future<void> _syncTelemetryToBackend() async {
-    if (currentDriverId == null || currentPosition == null || !isOnDuty) return;
+    if (currentDriverId == null || currentPosition == null) return;
+    if (!isOnDuty && !hasActiveMission) return;
 
     try {
       // Read battery
@@ -144,7 +168,7 @@ class TelemetryService {
         }
       } catch (_) {}
 
-      // SECURITY DEFINER RPC: Never updates table directly with anon role
+      // SECURITY DEFINER RPC: report_driver_telemetry
       await Supabase.instance.client.rpc('report_driver_telemetry', params: {
         'p_driver_id': currentDriverId,
         'p_lat': currentPosition!.latitude,
@@ -158,6 +182,80 @@ class TelemetryService {
 
     } catch (e) {
       debugPrint('report_driver_telemetry RPC failed: $e');
+    }
+  }
+
+  /// PROACTIVE BACKGROUND EMERGENCY MONITOR:
+  /// Even when app is minimized or phone is locked, this queries for assigned runs
+  /// and loudly triggers siren + high-priority wake notification.
+  Future<void> _checkForAssignedEmergencies() async {
+    if (currentDriverId == null) return;
+
+    try {
+      final active = await Supabase.instance.client
+          .from('emergency_requests')
+          .select('id, emergency_type, location_address, priority, status, contact_phone, patient_name')
+          .eq('driver_id', currentDriverId!)
+          .not('status', 'in', '("Completed","Cancelled / failed","cancelled","completed","Declined")')
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      if (active != null) {
+        final reqId = active['id']?.toString();
+        hasActiveMission = true;
+        activeMissionId = reqId;
+
+        // Force On Duty in memory and backend during active mission
+        if (!isOnDuty) {
+          isOnDutyNotifier.value = true;
+          _setDutyInBackend(currentDriverId!, true);
+        }
+
+        // Check if this mission has already been alerted to the driver
+        if (reqId != null && _lastAlertedMissionId != reqId) {
+          _lastAlertedMissionId = reqId;
+
+          final type = active['emergency_type']?.toString() ?? 'Emergency Run';
+          final address = active['location_address']?.toString() ?? 'Location dispatched';
+          final priority = active['priority']?.toString() ?? 'URGENT';
+
+          // 1. Play loud siren alarm
+          _audio.playDispatchAlarm();
+
+          // 2. Trigger High-Priority Lock-Screen Wake Notification
+          await _fcm.showEmergencyDispatchAlert(
+            title: '🚨 PRIORITY $priority DISPATCH ASSIGNED!',
+            body: '$type: $address. Tap to open mission console.',
+            payload: reqId,
+          );
+
+          // 3. Update sticky foreground notification to indicate live mission
+          await _fcm.showPersistentDutyNotification(
+            driverName: currentDriverName ?? 'Ambulance Unit',
+            vehicleLabel: '🚨 ACTIVE MISSION: $type',
+          );
+
+          // 4. Notify UI if mounted
+          onEmergencyAssigned?.call(Map<String, dynamic>.from(active));
+        }
+      } else {
+        // No active mission in progress
+        if (hasActiveMission) {
+          hasActiveMission = false;
+          activeMissionId = null;
+          _lastAlertedMissionId = null;
+          // Restore standard persistent duty notification
+          if (isOnDuty) {
+            await _fcm.showPersistentDutyNotification(
+              driverName: currentDriverName ?? 'Ambulance Unit',
+              vehicleLabel: currentVehicleLabel,
+            );
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Background emergency check note: $e');
     }
   }
 
@@ -183,16 +281,29 @@ class TelemetryService {
     }
   }
 
-  /// Feature B: Toggle On Duty vs Off Duty
-  Future<void> toggleDuty(String driverId, {String? driverName, String? vehicleLabel}) async {
+  /// Feature B: Safe Toggle On Duty vs Off Duty with Security Guard
+  Future<bool> toggleDuty(String driverId, {String? driverName, String? vehicleLabel}) async {
     if (isOnDuty) {
+      // SECURITY GUARD: Never allow Off-Duty if an active mission is in progress!
+      if (hasActiveMission) {
+        debugPrint('SECURITY ENFORCEMENT: Driver cannot toggle off-duty while mission is active!');
+        return false;
+      }
       await stopTelemetry(setOffDuty: true);
+      return true;
     } else {
       await startTelemetry(driverId, driverName: driverName, vehicleLabel: vehicleLabel);
+      return true;
     }
   }
 
   Future<void> stopTelemetry({bool setOffDuty = true}) async {
+    // SECURITY GUARD: If active mission is in progress, ignore request to go off-duty
+    if (hasActiveMission) {
+      debugPrint('SECURITY GUARD: Location telemetry transmission is locked ON during active emergency mission.');
+      return;
+    }
+
     isStreaming = false;
     if (setOffDuty) {
       isOnDutyNotifier.value = false;
