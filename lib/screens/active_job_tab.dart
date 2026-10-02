@@ -72,8 +72,7 @@ class _ActiveJobTabState extends State<ActiveJobTab> {
     try {
       final broadcastChannel = Supabase.instance.client.channel('ops-request-board-sync');
       await broadcastChannel.subscribe();
-      await broadcastChannel.send(
-        type: RealtimeListenTypes.broadcast,
+      await broadcastChannel.sendBroadcastMessage(
         event: 'driver_tactical_alert',
         payload: {
           'request_id': reqId,
