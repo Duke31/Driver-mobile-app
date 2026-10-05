@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -18,9 +19,9 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // Show instant high-importance notification waking up device
   const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
     'emergency_dispatch',
+    'Emergency Dispatch Siren & Run Alerts',
     icon: 'ic_stat_notification',
     color: Color(0xFFFF334B),
-    'Emergency Dispatch Siren & Run Alerts',
     channelDescription: 'High-priority EMS emergency dispatch alerts with siren and lockscreen wake',
     importance: Importance.max,
     priority: Priority.max,
@@ -202,9 +203,9 @@ class FcmNotificationService {
       final unit = vehicleLabel?.isNotEmpty == true ? vehicleLabel! : 'Ambulance Unit';
       final androidDetails = AndroidNotificationDetails(
         dutyChannelId,
+        'Ambulance Duty & Telemetry Service',
         icon: 'ic_stat_notification',
         color: const Color(0xFF00D4FF),
-        'Ambulance Duty & Telemetry Service',
         channelDescription: 'Sticky status notification keeping background GPS telemetry alive',
         importance: Importance.low,
         priority: Priority.low,
@@ -251,9 +252,9 @@ class FcmNotificationService {
     try {
       const androidDetails = AndroidNotificationDetails(
         emergencyChannelId,
+        'Emergency Dispatch Siren & Run Alerts',
         icon: 'ic_stat_notification',
         color: Color(0xFFFF334B),
-        'Emergency Dispatch Siren & Run Alerts',
         channelDescription: 'High-priority EMS emergency dispatch alerts with siren and lockscreen wake',
         importance: Importance.max,
         priority: Priority.max,
