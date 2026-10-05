@@ -18,6 +18,8 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // Show instant high-importance notification waking up device
   const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
     'emergency_dispatch',
+    icon: 'ic_stat_notification',
+    color: Color(0xFFFF334B),
     'Emergency Dispatch Siren & Run Alerts',
     channelDescription: 'High-priority EMS emergency dispatch alerts with siren and lockscreen wake',
     importance: Importance.max,
@@ -65,7 +67,7 @@ class FcmNotificationService {
 
     // 1. Initialize Local Notifications Plugin
     const AndroidInitializationSettings androidSettings =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+        AndroidInitializationSettings('ic_stat_notification');
     const InitializationSettings initSettings = InitializationSettings(android: androidSettings);
 
     await _localNotifications.initialize(
@@ -200,6 +202,8 @@ class FcmNotificationService {
       final unit = vehicleLabel?.isNotEmpty == true ? vehicleLabel! : 'Ambulance Unit';
       final androidDetails = AndroidNotificationDetails(
         dutyChannelId,
+        icon: 'ic_stat_notification',
+        color: const Color(0xFF00D4FF),
         'Ambulance Duty & Telemetry Service',
         channelDescription: 'Sticky status notification keeping background GPS telemetry alive',
         importance: Importance.low,
@@ -247,6 +251,8 @@ class FcmNotificationService {
     try {
       const androidDetails = AndroidNotificationDetails(
         emergencyChannelId,
+        icon: 'ic_stat_notification',
+        color: Color(0xFFFF334B),
         'Emergency Dispatch Siren & Run Alerts',
         channelDescription: 'High-priority EMS emergency dispatch alerts with siren and lockscreen wake',
         importance: Importance.max,

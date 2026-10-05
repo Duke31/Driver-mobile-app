@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
@@ -127,6 +128,8 @@ class TelemetryService {
           notificationText: 'Continuous ambulance GPS telemetry & priority emergency dispatch link active.',
           notificationTitle: '🚑 Ambulance Dispatch Telemetry Online',
           enableWakeLock: true,
+          notificationIcon: AndroidResource(name: 'ic_stat_notification', defType: 'drawable'),
+          color: Color(0xFF00D4FF),
         ),
       );
     } else {
