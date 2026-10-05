@@ -51,7 +51,7 @@
     </queries>
 
     <application
-        android:label="Ambulance Driver"
+        android:label="Solace Driver"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">

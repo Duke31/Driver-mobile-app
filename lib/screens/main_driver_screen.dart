@@ -468,7 +468,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1E293B),
+        backgroundColor: const Color(0xFF0A1E4A),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('End Shift & Sign Out', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: Text(
@@ -507,7 +507,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1E293B),
+        backgroundColor: const Color(0xFF0A1E4A),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(
           children: [
@@ -622,7 +622,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
-          backgroundColor: const Color(0xFF1E293B),
+          backgroundColor: const Color(0xFF0A1E4A),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Row(
             children: [
@@ -644,7 +644,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0F172A),
+                backgroundColor: const Color(0xFF061536),
                 foregroundColor: Colors.white,
               ),
               child: const Text('Understood'),
@@ -662,7 +662,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
       final confirm = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          backgroundColor: const Color(0xFF1E293B),
+          backgroundColor: const Color(0xFF0A1E4A),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Text('Confirm Off-Duty Status', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           content: const Text(
@@ -700,7 +700,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: const BoxDecoration(
-        color: Color(0xFF1E293B),
+        color: Color(0xFF0A1E4A),
         border: Border(
           bottom: BorderSide(color: Color(0xFF334155), width: 1),
         ),
@@ -854,15 +854,20 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
+      backgroundColor: const Color(0xFF061536),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1E293B),
+        backgroundColor: const Color(0xFF0A1E4A),
         elevation: 0,
-        leading: const Padding(
-          padding: EdgeInsets.only(left: 12.0),
-          child: Icon(Icons.local_hospital_rounded, color: Colors.redAccent, size: 24),
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 12.0),
+          child: Image.asset(
+            'assets/images/solace_icon.png',
+            height: 32,
+            width: 32,
+            errorBuilder: (_, __, ___) => const Icon(Icons.emergency_rounded, color: Color(0xFF00D4FF), size: 24),
+          ),
         ),
-        leadingWidth: 36,
+        leadingWidth: 44,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -873,8 +878,8 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
               overflow: TextOverflow.ellipsis,
             ),
             Text(
-              '${widget.driver.vehicleLabel ?? "Ambulance Unit"} • ${widget.driver.phone ?? ""}',
-              style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+              'Solace Fleet • ${widget.driver.vehicleLabel ?? "Ambulance Unit"}',
+              style: const TextStyle(fontSize: 11, color: Color(0xFF00D4FF), fontWeight: FontWeight.w600),
               overflow: TextOverflow.ellipsis,
             ),
           ],
@@ -1034,7 +1039,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentTabIndex,
-        backgroundColor: const Color(0xFF1E293B),
+        backgroundColor: const Color(0xFF0A1E4A),
         indicatorColor: Colors.redAccent.withOpacity(0.2),
         onDestinationSelected: (idx) {
           setState(() => _currentTabIndex = idx);

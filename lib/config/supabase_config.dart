@@ -4,5 +4,5 @@ class SupabaseConfig {
   static const String anonKey = 'sb_publishable_-SZtZ9gUc3mGdxe5DKxKrA_REbC9iXt';
 
   // Fallback credentials or configurable overrides
-  static const String appTitle = 'Ambulance Unit Console';
+  static const String appTitle = 'Solace Driver Console';
 }

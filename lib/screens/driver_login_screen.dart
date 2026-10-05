@@ -146,7 +146,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
   Widget build(BuildContext context) {
     if (_isCheckingSavedSession) {
       return const Scaffold(
-        backgroundColor: Color(0xFF0F172A),
+        backgroundColor: Color(0xFF061536),
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -164,7 +164,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
+      backgroundColor: const Color(0xFF061536),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 24.0),
@@ -172,49 +172,48 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 20),
-              // App Logo & Header
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.red.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.redAccent.withOpacity(0.3)),
-                    ),
-                    child: const Icon(
-                      Icons.emergency_rounded,
-                      color: Colors.redAccent,
-                      size: 36,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'EMERGENCY MEDICAL DISPATCH',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.2,
-                            color: Colors.redAccent,
-                          ),
+              // Solace App Logo & Header
+              Center(
+                child: Column(
+                  children: [
+                    Image.asset(
+                      'assets/images/solace_logo.png',
+                      height: 104,
+                      width: 104,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => Container(
+                        height: 80,
+                        width: 80,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF061536),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: const Color(0xFF00D4FF), width: 1.5),
                         ),
-                        Text(
-                          'Ambulance Terminal',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                            letterSpacing: -0.5,
-                          ),
-                        ),
-                      ],
+                        child: const Icon(Icons.emergency_rounded, color: Color(0xFF00D4FF), size: 40),
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Solace',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.5,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'EMERGENCY DISPATCH • DRIVER CONSOLE',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 2.2,
+                        color: Color(0xFF00D4FF),
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 24),
 
@@ -222,7 +221,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1E293B),
+                  color: const Color(0xFF0A1E4A),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: Colors.white.withOpacity(0.06)),
                 ),
@@ -271,7 +270,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
                   hintStyle: const TextStyle(color: Colors.white38),
                   prefixIcon: const Icon(Icons.badge_rounded, color: Colors.white60),
                   filled: true,
-                  fillColor: const Color(0xFF1E293B),
+                  fillColor: const Color(0xFF0A1E4A),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
                     borderSide: BorderSide.none,
@@ -311,7 +310,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
                     onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                   ),
                   filled: true,
-                  fillColor: const Color(0xFF1E293B),
+                  fillColor: const Color(0xFF0A1E4A),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
                     borderSide: BorderSide.none,
